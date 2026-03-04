@@ -676,6 +676,23 @@
         onlyInsufficient: false,
         sortOrder: "id_desc",
       };
+      const COLUMN_ALIASES = {
+        source_id: ["source_id", "id", "faq_id", "post_id", "번호", "순번", "고유순번"],
+        original_title: ["original_title", "title", "subject", "제목"],
+        original_question: ["original_question", "question", "문의", "질문"],
+        original_answer: ["original_answer", "answer", "content", "답변", "내용"],
+        transformed_text: [
+          "transformed_text",
+          "converted_text",
+          "result",
+          "llm_result",
+          "final_text",
+          "변환결과",
+          "변환_결과",
+        ],
+        model: ["model", "llm_model", "ai_model", "사용모델"],
+        prompt_instruction: ["prompt_instruction", "prompt", "instruction", "프롬프트", "지침"],
+      };
 
       const fileInput = document.getElementById("csvFile");
       const dropZone = document.getElementById("dropZone");
@@ -707,13 +724,75 @@
       const guidePrevButton = document.getElementById("guidePrev");
       const guideNextButton = document.getElementById("guideNext");
       const GUIDE_STORAGE_KEY = "faq_viewer_guide_seen_v1";
+      const DEFAULT_CSV_CANDIDATES = ["data/faq_b.csv", "faq_b.csv", "data/faq_a.csv"];
       let toastTimer = null;
       let guideTimer = null;
       let guideOpen = false;
       let guideIndex = 0;
+      let autoLoadDone = false;
 
       function clamp(value, min, max) {
         return Math.max(min, Math.min(max, value));
+      }
+
+      function normalizeHeader(value) {
+        return String(value || "")
+          .replace(/^\uFEFF/, "")
+          .trim()
+          .toLowerCase()
+          .replace(/[\s\-./]+/g, "_")
+          .replace(/[()[\]{}]/g, "");
+      }
+
+      function countDelimiter(line, delimiter) {
+        let count = 0;
+        let inQuotes = false;
+        let i = 0;
+        while (i < line.length) {
+          const ch = line[i];
+          if (ch === '"') {
+            if (inQuotes && line[i + 1] === '"') {
+              i += 2;
+              continue;
+            }
+            inQuotes = !inQuotes;
+            i += 1;
+            continue;
+          }
+          if (!inQuotes && ch === delimiter) {
+            count += 1;
+          }
+          i += 1;
+        }
+        return count;
+      }
+
+      function detectDelimiter(text) {
+        const candidates = [",", ";", "\t", "|"];
+        const sampleLines = text
+          .replace(/^\uFEFF/, "")
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0)
+          .slice(0, 4);
+
+        if (sampleLines.length === 0) {
+          return ",";
+        }
+
+        let best = ",";
+        let bestScore = -1;
+        candidates.forEach((delimiter) => {
+          const score = sampleLines.reduce(
+            (sum, line) => sum + countDelimiter(line, delimiter),
+            0
+          );
+          if (score > bestScore) {
+            bestScore = score;
+            best = delimiter;
+          }
+        });
+        return bestScore > 0 ? best : ",";
       }
 
       function parseCsv(text) {
@@ -724,6 +803,7 @@
         let inQuotes = false;
 
         const clean = text.replace(/^\uFEFF/, "");
+        const delimiter = detectDelimiter(clean);
 
         while (i < clean.length) {
           const ch = clean[i];
@@ -749,7 +829,7 @@
             i += 1;
             continue;
           }
-          if (ch === ",") {
+          if (ch === delimiter) {
             row.push(cell);
             cell = "";
             i += 1;
@@ -777,12 +857,15 @@
           rows.push(row);
         }
 
-        if (rows.length === 0) {
+        const nonEmptyRows = rows.filter((cols) =>
+          cols.some((col) => String(col || "").trim() !== "")
+        );
+        if (nonEmptyRows.length === 0) {
           return [];
         }
 
-        const header = rows[0];
-        return rows.slice(1).map((values) => {
+        const header = nonEmptyRows[0].map((key) => normalizeHeader(key));
+        return nonEmptyRows.slice(1).map((values) => {
           const obj = {};
           for (let idx = 0; idx < header.length; idx += 1) {
             obj[header[idx]] = values[idx] || "";
@@ -792,7 +875,10 @@
       }
 
       function isInsufficient(row) {
-        const text = row.transformed_text || "";
+        const text = String(row.transformed_text || "").trim();
+        if (!text) {
+          return true;
+        }
         return text.includes("원문 답변이 없어 안전하게 변환하지 않았어요.");
       }
 
@@ -1057,7 +1143,7 @@
         }
 
         serverHint.innerHTML =
-          "브라우저의 CSV 접근 이슈가 있으면 서버 모드 권장: <code>python -m http.server 8000</code> 후 <code>http://localhost:8000/viewer.html</code> 접속";
+          "웹 환경에서는 <code>data/faq_b.csv</code> 자동 로드를 먼저 시도합니다. 자동 로드가 안 되면 CSV 파일을 직접 선택하세요.";
       }
 
       async function copyText(text) {
@@ -1185,14 +1271,100 @@
           .replace(/'/g, "&#39;");
       }
 
-      function readFileAsText(file) {
-        // file:// 환경 호환을 위해 FileReader 표준 API를 고정 사용한다.
+      function pickByAliases(row, aliases) {
+        for (let i = 0; i < aliases.length; i += 1) {
+          const key = normalizeHeader(aliases[i]);
+          if (Object.prototype.hasOwnProperty.call(row, key)) {
+            return row[key];
+          }
+        }
+        return "";
+      }
+
+      function normalizeRow(row) {
+        const sourceId = pickByAliases(row, COLUMN_ALIASES.source_id);
+        const title = pickByAliases(row, COLUMN_ALIASES.original_title);
+        const question = pickByAliases(row, COLUMN_ALIASES.original_question);
+        const answer = pickByAliases(row, COLUMN_ALIASES.original_answer);
+        return {
+          source_id: sourceId,
+          original_title: title || question || sourceId,
+          original_question: question || title,
+          original_answer: answer,
+          transformed_text: pickByAliases(row, COLUMN_ALIASES.transformed_text),
+          model: pickByAliases(row, COLUMN_ALIASES.model),
+          prompt_instruction: pickByAliases(row, COLUMN_ALIASES.prompt_instruction),
+        };
+      }
+
+      function hasLoadableColumns(rows) {
+        if (!rows || rows.length === 0) {
+          return false;
+        }
+        const sample = rows[0];
+        const hasId = COLUMN_ALIASES.source_id.some((alias) =>
+          Object.prototype.hasOwnProperty.call(sample, normalizeHeader(alias))
+        );
+        const hasTitleOrQuestion =
+          COLUMN_ALIASES.original_title.some((alias) =>
+            Object.prototype.hasOwnProperty.call(sample, normalizeHeader(alias))
+          ) ||
+          COLUMN_ALIASES.original_question.some((alias) =>
+            Object.prototype.hasOwnProperty.call(sample, normalizeHeader(alias))
+          );
+        return hasId && hasTitleOrQuestion;
+      }
+
+      function readFileAsArrayBuffer(file) {
+        if (typeof file.arrayBuffer === "function") {
+          return file.arrayBuffer();
+        }
+
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onload = () => resolve(reader.result);
           reader.onerror = () => reject(reader.error || new Error("파일 읽기 실패"));
-          reader.readAsText(file, "utf-8");
+          reader.readAsArrayBuffer(file);
         });
+      }
+
+      async function readFileAsText(file) {
+        // file:// 환경에서도 동작하도록 File API만 사용하고, UTF-8/EUC-KR을 순차 판별한다.
+        const bytes = await readFileAsArrayBuffer(file);
+        return decodeCsvBytes(bytes);
+      }
+
+      function decodeCsvBytes(bytes) {
+        const attempts = ["utf-8", "euc-kr"];
+        let fallbackText = "";
+        let fallbackEncoding = attempts[0];
+
+        for (let index = 0; index < attempts.length; index += 1) {
+          const encoding = attempts[index];
+          let text;
+          try {
+            const decoder = new TextDecoder(encoding, { fatal: false });
+            text = decoder.decode(bytes);
+          } catch (error) {
+            continue;
+          }
+
+          if (index === 0) {
+            fallbackText = text;
+            fallbackEncoding = encoding;
+          }
+
+          const rows = parseCsv(text);
+          if (hasLoadableColumns(rows)) {
+            return { text, encoding };
+          }
+        }
+
+        if (fallbackText) {
+          return { text: fallbackText, encoding: fallbackEncoding };
+        }
+
+        throw new Error("파일 내용을 해석할 수 없습니다.");
       }
 
       async function handleCsvFile(file) {
@@ -1202,16 +1374,50 @@
 
         if (!String(file.name || "").toLowerCase().endsWith(".csv")) {
           setMeta("CSV 파일만 업로드할 수 있습니다.");
+          showToast("CSV 파일만 업로드할 수 있습니다.", true);
           return;
         }
 
         try {
           setMeta(`${file.name} 파일을 읽는 중입니다...`);
-          const text = await readFileAsText(file);
-          await loadCsvText(text, file.name);
+          const decoded = await readFileAsText(file);
+          await loadCsvText(decoded.text, file.name, decoded.encoding);
         } catch (error) {
           const reason = error && error.message ? error.message : String(error);
           setMeta(`파일 로드 실패: ${reason}`);
+          showToast("파일 로드 실패", true);
+        }
+      }
+
+      async function loadCsvFromUrl(path) {
+        const response = await fetch(path, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const bytes = await response.arrayBuffer();
+        const decoded = decodeCsvBytes(bytes);
+        await loadCsvText(decoded.text, path, decoded.encoding);
+      }
+
+      async function tryAutoLoadDefaultCsv() {
+        if (autoLoadDone) {
+          return;
+        }
+        if (window.location.protocol === "file:") {
+          return;
+        }
+
+        for (let index = 0; index < DEFAULT_CSV_CANDIDATES.length; index += 1) {
+          const candidate = DEFAULT_CSV_CANDIDATES[index];
+          try {
+            await loadCsvFromUrl(candidate);
+            autoLoadDone = true;
+            setMeta(`${candidate} 자동 로드 완료`);
+            showToast("기본 CSV 자동 로드 완료", false);
+            return;
+          } catch (error) {
+            // 다음 후보를 시도한다.
+          }
         }
       }
 
@@ -1266,30 +1472,63 @@
         );
       }
 
-      async function loadCsvText(text, sourceName) {
+      async function loadCsvText(text, sourceName, encoding) {
         const rows = parseCsv(text);
         if (rows.length === 0) {
           setMeta(`${sourceName}: CSV 파싱 결과가 비어 있습니다.`);
+          showToast("CSV 파싱 결과가 비어 있습니다.", true);
           state.rows = [];
           renderList();
           return;
         }
 
-        const required = ["source_id", "original_title", "original_answer", "transformed_text"];
-        const missing = required.filter((key) => !(key in rows[0]));
-        if (missing.length > 0) {
-          setMeta(`필수 컬럼 누락: ${missing.join(", ")}`);
+        if (!hasLoadableColumns(rows)) {
+          const encodingHint = encoding ? ` (디코딩: ${String(encoding).toUpperCase()})` : "";
+          setMeta(
+            `지원 컬럼을 찾지 못했습니다${encodingHint}. 헤더 예시: source_id/title/question/answer/transformed_text`
+          );
+          showToast("지원 컬럼을 찾지 못했습니다.", true);
           state.rows = [];
           renderList();
           return;
         }
 
-        applyRows(rows, sourceName);
+        const normalizedRows = rows
+          .map((row) => normalizeRow(row))
+          .filter((row) => {
+            return (
+              String(row.source_id || "").trim() !== "" ||
+              String(row.original_title || "").trim() !== "" ||
+              String(row.original_question || "").trim() !== "" ||
+              String(row.original_answer || "").trim() !== "" ||
+              String(row.transformed_text || "").trim() !== ""
+            );
+          });
+
+        if (normalizedRows.length === 0) {
+          setMeta(`${sourceName}: 표시 가능한 데이터 행이 없습니다.`);
+          showToast("표시 가능한 데이터 행이 없습니다.", true);
+          state.rows = [];
+          renderList();
+          return;
+        }
+
+        applyRows(normalizedRows, sourceName);
+        showToast("CSV 로드 완료", false);
+        if (encoding && String(encoding).toLowerCase() !== "utf-8") {
+          const insufficientCount = normalizedRows.filter((row) => isInsufficient(row)).length;
+          setMeta(
+            `${sourceName} 로드 완료 (${String(encoding).toUpperCase()}): 총 ${normalizedRows.length}건, 보류 ${insufficientCount}건, 정상 ${
+              normalizedRows.length - insufficientCount
+            }건`
+          );
+        }
       }
 
       fileInput.addEventListener("change", async (event) => {
         const file = event.target.files && event.target.files[0];
         await handleCsvFile(file);
+        event.target.value = "";
       });
 
       searchInput.addEventListener("input", () => {
@@ -1438,6 +1677,7 @@
       configureProtocolHint();
       bindDropZone();
       updateStats();
+      tryAutoLoadDefaultCsv();
       scheduleInitialGuide();
     </script>
   </body>

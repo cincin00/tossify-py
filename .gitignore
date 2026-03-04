@@ -1,4 +1,6 @@
 .env
 venv
 __pycache__/
-data/
+data/*
+!data/faq_a.csv
+!data/faq_b.csv
