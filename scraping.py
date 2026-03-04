@@ -14,39 +14,21 @@ from urllib.request import Request, urlopen
 
 
 DEFAULT_BASE_URL = "https://www.firstmall.kr/customer/faq/search"
-DEFAULT_STYLE_INSTRUCTION = """이름: 토스(Toss) 수석 UX 라이터
-설명: 복잡하고 딱딱한 쇼핑몰 FAQ를 토스의 'Simplicity' 원칙에 따라 친근하고 명확한 대화체로 바꿔주는 전문가입니다.
-요청사항:
-Role: 대한민국 최고 핀테크 '토스(Toss)'의 수석 UX 라이터
+DEFAULT_STYLE_INSTRUCTION = """역할: FAQ 문체 변환기
+목표: 원문의 사실과 의미를 유지하고, 표현만 Toss 스타일의 친근하고 명확한 한국어로 다듬습니다.
 
-Objective:
-입력된 쇼핑몰 FAQ 데이터를 토스의 디자인 원칙인 'Simplicity(단순함)'와 'Toss Voice'에 따라 재작성합니다. 사용자에게 가장 명확하고 친근한 경험을 제공하는 것을 최우선으로 합니다.
+핵심 규칙:
+1) 사실 보존: 숫자/날짜/요금/기간/조건/URL/버튼명/메뉴명은 변경하지 않습니다.
+2) 추정 금지: 원문에 없는 정보는 추가하지 않습니다.
+3) 문체: 간결하고 정중한 대화체(~해요/~할 수 있어요). 불필요한 사과/장식/이모지는 금지합니다.
+4) 구조: 결론 먼저, 단계가 있으면 bullet을 사용합니다.
+5) 답변 원문이 비어 있으면 새 답변을 생성하지 않고 status를 insufficient_source로 반환합니다.
 
-Core Principles:
-Tone & Manner: 친근함, 정중함, 단호함
-- ~해요, ~이에요, ~인가요 등 대화형 구어체 사용.
-- 극존칭(성함, 함자 등) 및 불필요한 사과 문구(양해 부탁드립니다) 제거.
-- 자신감 있는 문장 맺음.
-
-Vocabulary: 쉬운 우리말 및 능동태
-- 한자어 탈피: 익일 → 내일, 수령 → 받기, 유선 문의 → 전화 문의, 오기재 → 잘못 입력.
-- 능동태 전환: 확인됩니다 → 확인할 수 있어요, 진행됩니다 → 시작해요.
-- 사용자 중심 서술: '시스템에서 ~됩니다' 대신 '고객님이 ~할 수 있어요'로 작성.
-
-Structure: 두괄식 및 간결함
-- 가장 중요한 결론을 문장 맨 앞에 배치.
-- 한 문장은 최대 두 줄을 넘기지 않으며, 불필요한 접속사(그리고, 따라서 등) 생략.
-- 나열형 정보는 반드시 개조식(Bullet points)으로 정리.
-
-Constraints:
-- 출력 시 설명, 서론, 사족을 전면 배제합니다.
-- 오직 변환된 최종 결과물만 출력합니다.
-- 이모지 사용을 금지하며, 텍스트의 가독성과 명확성에 집중합니다.
-
-Reference Examples:
-- 배송: "오후 2시까지 결제하면 오늘 출발해요. 그 이후에는 내일 보내드릴게요."
-- 회원 정보: "비밀번호를 잊으셨나요? 로그인 화면 아래 [비밀번호 찾기]를 눌러 새로 설정해 보세요."
-- 시스템 오류: "지금은 잠깐 이용할 수 없어요. 잠시 후에 다시 시도해 주세요."""
+출력 형식:
+- 반드시 JSON 객체 하나만 출력합니다.
+- 키는 question, answer, status, reason만 사용합니다.
+- status는 ok 또는 insufficient_source 중 하나입니다.
+- status가 insufficient_source면 reason에 원인을 짧게 작성합니다."""
 
 
 @dataclass
@@ -266,42 +248,125 @@ def save_a_to_sqlite(path: str, items: list[FaqItem]) -> None:
         conn.close()
 
 
-def build_transform_prompt(item: FaqItem, instruction: str) -> str:
+def build_transform_prompt(item: FaqItem) -> str:
     return (
-        f"[지시]\n{instruction}\n\n"
         "[원본 FAQ]\n"
         f"카테고리: {item.category}\n"
         f"제목: {item.title}\n"
         f"질문: {item.question}\n"
         f"답변: {item.answer}\n\n"
-        "[출력 형식]\n"
-        "질문: ...\n답변: ..."
+        "[작업]\n"
+        "원문의 의미와 사실은 유지하고 문장만 다듬어 주세요.\n"
+        "출력은 JSON 객체 하나만 작성하세요."
     )
 
 
-def transform_with_gemini(
+def normalize_transform_payload(payload: dict[str, Any], item: FaqItem) -> dict[str, str]:
+    question = str(payload.get("question") or "").strip() or item.question or item.title
+    answer = str(payload.get("answer") or "").strip()
+    status = str(payload.get("status") or "").strip()
+    reason = str(payload.get("reason") or "").strip()
+
+    if status not in {"ok", "insufficient_source"}:
+        raise ValueError(f"unexpected status: {status}")
+    if status == "ok" and not answer:
+        raise ValueError("status=ok requires non-empty answer")
+    if status == "insufficient_source":
+        reason = reason or "insufficient_source"
+        answer = answer or "원문 답변이 없어 안전하게 변환하지 않았어요."
+
+    return {
+        "question": question,
+        "answer": answer,
+        "status": status,
+        "reason": reason,
+    }
+
+
+def parse_transform_response(text: str, item: FaqItem) -> dict[str, str]:
+    raw = text.strip()
+    if not raw:
+        raise ValueError("empty model response")
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise ValueError("response is not valid JSON object") from None
+        payload = json.loads(raw[start : end + 1])
+
+    if not isinstance(payload, dict):
+        raise ValueError("response JSON must be an object")
+
+    return normalize_transform_payload(payload, item)
+
+
+def build_insufficient_payload(item: FaqItem, reason: str) -> dict[str, str]:
+    return {
+        "question": item.question or item.title,
+        "answer": "원문 답변이 없어 안전하게 변환하지 않았어요.",
+        "status": "insufficient_source",
+        "reason": reason,
+    }
+
+
+def render_transformed_text(payload: dict[str, str]) -> str:
+    return f"질문: {payload['question']}\n답변: {payload['answer']}"
+
+
+def transform_with_openai(
     items: list[FaqItem],
     api_key: str,
     model: str,
     instruction: str,
     request_interval_sec: float,
 ) -> list[FaqTransformed]:
-    from google import genai
+    from openai import OpenAI
 
-    client = genai.Client(api_key=api_key)
+    client = OpenAI(api_key=api_key)
     transformed: list[FaqTransformed] = []
 
     for item in items:
-        prompt = build_transform_prompt(item, instruction)
-        response = client.models.generate_content(model=model, contents=prompt)
-        text = response.text or ""
+        if not item.answer.strip():
+            payload = build_insufficient_payload(item, reason="answer_empty")
+            transformed.append(
+                FaqTransformed(
+                    source_id=item.source_id,
+                    original_title=item.title,
+                    original_question=item.question,
+                    original_answer=item.answer,
+                    transformed_text=render_transformed_text(payload),
+                    model=model,
+                    prompt_instruction=instruction,
+                )
+            )
+            continue
+
+        prompt = build_transform_prompt(item)
+        response = client.chat.completions.create(
+            model=model,
+            temperature=0.2,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": instruction},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        raw_text = response.choices[0].message.content or ""
+        try:
+            payload = parse_transform_response(raw_text, item)
+        except ValueError:
+            payload = build_insufficient_payload(item, reason="invalid_response_format")
+
         transformed.append(
             FaqTransformed(
                 source_id=item.source_id,
                 original_title=item.title,
                 original_question=item.question,
                 original_answer=item.answer,
-                transformed_text=text,
+                transformed_text=render_transformed_text(payload),
                 model=model,
                 prompt_instruction=instruction,
             )
@@ -379,7 +444,7 @@ def save_b_to_sqlite(path: str, items: list[FaqTransformed]) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Firstmall FAQ 수집 + Gemini Toss체 변환 파이프라인")
+    parser = argparse.ArgumentParser(description="Firstmall FAQ 수집 + OpenAI Toss체 변환 파이프라인")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--per-page", type=int, default=100)
     parser.add_argument("--max-pages", type=int, default=None)
@@ -390,10 +455,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--a-csv", default="data/faq_a.csv")
     parser.add_argument("--a-db", default="data/faq.db")
 
-    parser.add_argument("--gemini-api-key", default=os.getenv("GEMINI_API_KEY", ""))
-    parser.add_argument("--gemini-model", default="gemini-2.0-flash")
+    parser.add_argument(
+        "--openai-api-key",
+        "--gemini-api-key",
+        dest="openai_api_key",
+        default=os.getenv("OPENAI_API_KEY", ""),
+    )
+    parser.add_argument(
+        "--openai-model",
+        "--gemini-model",
+        dest="openai_model",
+        default="gpt-4o-mini",
+    )
     parser.add_argument("--style-instruction", default=DEFAULT_STYLE_INSTRUCTION)
-    parser.add_argument("--gemini-interval-sec", type=float, default=0.0)
+    parser.add_argument(
+        "--openai-interval-sec",
+        "--gemini-interval-sec",
+        dest="openai_interval_sec",
+        type=float,
+        default=0.0,
+    )
     parser.add_argument("--skip-transform", action="store_true")
 
     parser.add_argument("--b-csv", default="data/faq_b.csv")
@@ -424,18 +505,18 @@ def main() -> None:
     print(f"[A] DB 저장: {args.a_db} (table=faq_a)")
 
     if args.skip_transform:
-        print("[B] Gemini 변환을 건너뜁니다 (--skip-transform)")
+        print("[B] OpenAI 변환을 건너뜁니다 (--skip-transform)")
         return
 
-    if not args.gemini_api_key:
-        raise ValueError("Gemini 변환을 수행하려면 --gemini-api-key 또는 GEMINI_API_KEY가 필요합니다.")
+    if not args.openai_api_key:
+        raise ValueError("OpenAI 변환을 수행하려면 --openai-api-key 또는 OPENAI_API_KEY가 필요합니다.")
 
-    faq_b = transform_with_gemini(
+    faq_b = transform_with_openai(
         items=faq_a,
-        api_key=args.gemini_api_key,
-        model=args.gemini_model,
+        api_key=args.openai_api_key,
+        model=args.openai_model,
         instruction=args.style_instruction,
-        request_interval_sec=args.gemini_interval_sec,
+        request_interval_sec=args.openai_interval_sec,
     )
     save_b_to_csv(args.b_csv, faq_b)
     save_b_to_sqlite(args.b_db, faq_b)
