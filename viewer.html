@@ -586,8 +586,15 @@
         </div>
         <div class="controls-grid">
           <div class="controls controls-primary">
-            <input id="csvFile" class="file-input" type="file" accept=".csv,text/csv" />
-            <label id="dropZone" class="upload-box" for="csvFile">CSV 파일 선택 또는 드래그 앤 드롭</label>
+            <input
+              id="csvFile"
+              class="file-input"
+              type="file"
+              accept=".csv,.tsv,text/csv,text/tab-separated-values"
+            />
+            <label id="dropZone" class="upload-box" for="csvFile"
+              >CSV/TSV 파일 선택 또는 드래그 앤 드롭</label
+            >
             <button id="resetView" class="alt" type="button">필터 초기화</button>
           </div>
           <div class="controls controls-secondary">
@@ -795,6 +802,20 @@
         return bestScore > 0 ? best : ",";
       }
 
+      function normalizeEscapedNewlines(text) {
+        const raw = String(text || "");
+        if (!raw.includes("\\n")) {
+          return raw;
+        }
+
+        const hasPhysicalNewline = /\r|\n/.test(raw);
+        if (hasPhysicalNewline) {
+          return raw;
+        }
+
+        return raw.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n");
+      }
+
       function parseCsv(text) {
         const rows = [];
         let row = [];
@@ -802,7 +823,7 @@
         let i = 0;
         let inQuotes = false;
 
-        const clean = text.replace(/^\uFEFF/, "");
+        const clean = normalizeEscapedNewlines(text).replace(/^\uFEFF/, "");
         const delimiter = detectDelimiter(clean);
 
         while (i < clean.length) {
@@ -997,8 +1018,8 @@
       function getGuideSteps() {
         return [
           {
-            title: "CSV 파일 불러오기",
-            desc: "`CSV 파일 선택 또는 드래그 앤 드롭` 영역에서 faq_b.csv를 업로드하면 목록/상세가 채워져요.",
+            title: "CSV/TSV 파일 불러오기",
+            desc: "`CSV/TSV 파일 선택 또는 드래그 앤 드롭` 영역에서 faq_b.csv 또는 tsv 파일을 업로드하면 목록/상세가 채워져요.",
             element: dropZone,
           },
           {
@@ -1372,10 +1393,10 @@
           return;
         }
 
-        if (!String(file.name || "").toLowerCase().endsWith(".csv")) {
-          setMeta("CSV 파일만 업로드할 수 있습니다.");
-          showToast("CSV 파일만 업로드할 수 있습니다.", true);
-          return;
+        const lowerName = String(file.name || "").toLowerCase();
+        if (!(lowerName.endsWith(".csv") || lowerName.endsWith(".tsv"))) {
+          setMeta("확장자가 .csv/.tsv가 아니어도 형식이 맞으면 로드할 수 있어요. 계속 시도합니다.");
+          showToast("확장자와 무관하게 파싱을 시도합니다.", false);
         }
 
         try {
@@ -1460,7 +1481,7 @@
       function applyRows(rows, sourceName) {
         state.rows = rows;
         state.selectedIndex = 0;
-        dropZone.textContent = `${sourceName} 로드됨 - 다른 CSV로 교체하려면 클릭/드롭`;
+        dropZone.textContent = `${sourceName} 로드됨 - 다른 CSV/TSV로 교체하려면 클릭/드롭`;
         renderList();
         renderDetail();
 
@@ -1475,8 +1496,8 @@
       async function loadCsvText(text, sourceName, encoding) {
         const rows = parseCsv(text);
         if (rows.length === 0) {
-          setMeta(`${sourceName}: CSV 파싱 결과가 비어 있습니다.`);
-          showToast("CSV 파싱 결과가 비어 있습니다.", true);
+          setMeta(`${sourceName}: CSV/TSV 파싱 결과가 비어 있습니다.`);
+          showToast("CSV/TSV 파싱 결과가 비어 있습니다.", true);
           state.rows = [];
           renderList();
           return;
@@ -1514,7 +1535,7 @@
         }
 
         applyRows(normalizedRows, sourceName);
-        showToast("CSV 로드 완료", false);
+        showToast("CSV/TSV 로드 완료", false);
         if (encoding && String(encoding).toLowerCase() !== "utf-8") {
           const insufficientCount = normalizedRows.filter((row) => isInsufficient(row)).length;
           setMeta(
