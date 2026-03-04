@@ -556,11 +556,24 @@
 
       function escapeHtml(value) {
         return String(value)
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll('"', "&quot;")
-          .replaceAll("'", "&#39;");
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function readFileAsText(file) {
+        if (file && typeof file.text === "function") {
+          return file.text();
+        }
+
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(reader.error || new Error("파일 읽기 실패"));
+          reader.readAsText(file, "utf-8");
+        });
       }
 
       function applyRows(rows, sourceName) {
@@ -603,8 +616,14 @@
         if (!file) {
           return;
         }
-        const text = await file.text();
-        loadCsvText(text, file.name);
+        try {
+          setMeta(`${file.name} 파일을 읽는 중입니다...`);
+          const text = await readFileAsText(file);
+          await loadCsvText(text, file.name);
+        } catch (error) {
+          const reason = error && error.message ? error.message : String(error);
+          setMeta(`파일 로드 실패: ${reason}`);
+        }
       });
 
       loadSampleButton.addEventListener("click", async () => {
@@ -614,7 +633,7 @@
             throw new Error(`HTTP ${response.status}`);
           }
           const text = await response.text();
-          loadCsvText(text, "data/faq_b.csv");
+          await loadCsvText(text, "data/faq_b.csv");
         } catch (error) {
           setMeta("자동 로드에 실패했습니다. 파일 선택으로 직접 업로드해 주세요.");
         }
@@ -648,6 +667,20 @@
         }
         const row = state.filtered[state.selectedIndex];
         copyText(row.transformed_text || "");
+      });
+
+      window.addEventListener("error", (event) => {
+        const reason = event.error && event.error.message ? event.error.message : event.message;
+        if (reason) {
+          setMeta(`오류: ${reason}`);
+        }
+      });
+
+      window.addEventListener("unhandledrejection", (event) => {
+        const reason = event.reason && event.reason.message ? event.reason.message : String(event.reason);
+        if (reason) {
+          setMeta(`오류: ${reason}`);
+        }
       });
     </script>
   </body>
