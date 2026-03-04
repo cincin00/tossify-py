@@ -21,6 +21,9 @@ python scraping.py \
   --gemini-api-key "$GEMINI_API_KEY"
 ```
 
+
+기본값으로는 소스 코드에 내장된 **"토스(Toss) 수석 UX 라이터" 프롬프트**가 적용됩니다. 필요하면 `--style-instruction`으로 덮어쓸 수 있습니다.
+
 ### 변환 지시어 커스텀
 
 ```bash
