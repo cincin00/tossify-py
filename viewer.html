@@ -90,10 +90,38 @@
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
+        align-items: center;
       }
 
-      input[type="file"] {
-        max-width: 320px;
+      .file-input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .upload-box {
+        border: 1px dashed #84b89c;
+        border-radius: 12px;
+        background: #f1faf4;
+        color: #1d5138;
+        padding: 10px 14px;
+        min-width: 260px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: border-color 0.18s ease, background 0.18s ease;
+      }
+
+      .upload-box:hover {
+        border-color: #4b966d;
+        background: #e6f7ed;
+      }
+
+      .upload-box.drag {
+        border-color: #16794b;
+        background: #dcf2e5;
       }
 
       input[type="search"] {
@@ -103,6 +131,15 @@
         border-radius: 10px;
         padding: 10px 12px;
         font-size: 14px;
+      }
+
+      select {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 9px 10px;
+        font-size: 13px;
+        background: #fff;
+        color: var(--text);
       }
 
       button {
@@ -132,9 +169,41 @@
         filter: brightness(0.97);
       }
 
+      button:disabled {
+        opacity: 0.56;
+        cursor: not-allowed;
+      }
+
       .meta {
         color: var(--sub);
         font-size: 13px;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .stat {
+        border: 1px solid #e3ebdf;
+        border-radius: 12px;
+        background: #f9fcf8;
+        padding: 10px 12px;
+      }
+
+      .stat-label {
+        display: block;
+        color: var(--sub);
+        font-size: 12px;
+      }
+
+      .stat-value {
+        margin-top: 5px;
+        display: block;
+        font-size: 20px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
       }
 
       .board {
@@ -263,7 +332,31 @@
         font-size: 12px;
       }
 
+      .hint code {
+        background: #eff5ee;
+        border: 1px solid #d6e1d6;
+        border-radius: 8px;
+        padding: 1px 6px;
+      }
+
+      .key-hint {
+        color: var(--sub);
+        font-size: 12px;
+        margin-left: 8px;
+      }
+
+      .key-hint code {
+        background: #eff5ee;
+        border: 1px solid #d6e1d6;
+        border-radius: 8px;
+        padding: 1px 6px;
+      }
+
       @media (max-width: 1080px) {
+        .stats {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
         .board {
           grid-template-columns: 1fr;
         }
@@ -272,6 +365,12 @@
         .post-list {
           min-height: 460px;
           max-height: 460px;
+        }
+      }
+
+      @media (max-width: 680px) {
+        .stats {
+          grid-template-columns: 1fr;
         }
       }
     </style>
@@ -284,14 +383,41 @@
           <span class="badge">HTML 단일 파일</span>
         </div>
         <div class="controls">
-          <input id="csvFile" type="file" accept=".csv,text/csv" />
+          <input id="csvFile" class="file-input" type="file" accept=".csv,text/csv" />
+          <label id="dropZone" class="upload-box" for="csvFile">CSV 파일 선택 또는 드래그 앤 드롭</label>
           <button id="loadSample" class="alt" type="button">data/faq_b.csv 자동 로드</button>
+          <button id="resetView" class="alt" type="button">필터 초기화</button>
           <input id="search" type="search" placeholder="제목/질문/원문/변환 내용 검색" />
+          <button id="clearSearch" class="alt" type="button">검색 비우기</button>
+          <select id="sortOrder" aria-label="정렬 순서">
+            <option value="id_desc">정렬: ID 큰 순</option>
+            <option value="id_asc">정렬: ID 작은 순</option>
+            <option value="title_asc">정렬: 제목 가나다순</option>
+          </select>
           <button id="toggleInsufficient" class="warn" type="button">보류건만 보기: OFF</button>
         </div>
         <div id="meta" class="meta">CSV를 선택하면 목록/상세를 볼 수 있습니다.</div>
         <div class="hint">
           로컬 파일(`file://`) 환경에서는 보안정책으로 자동 로드가 막힐 수 있습니다. 이 경우 좌측 파일 선택 버튼으로 `faq_b.csv`를 직접 업로드하세요.
+        </div>
+        <div id="serverHint" class="hint"></div>
+        <div class="stats">
+          <div class="stat">
+            <span class="stat-label">전체 데이터</span>
+            <strong id="statTotal" class="stat-value">0</strong>
+          </div>
+          <div class="stat">
+            <span class="stat-label">현재 표시</span>
+            <strong id="statVisible" class="stat-value">0</strong>
+          </div>
+          <div class="stat">
+            <span class="stat-label">정상 변환</span>
+            <strong id="statOk" class="stat-value">0</strong>
+          </div>
+          <div class="stat">
+            <span class="stat-label">보류/실패</span>
+            <strong id="statInsufficient" class="stat-value">0</strong>
+          </div>
         </div>
       </section>
 
@@ -314,6 +440,7 @@
               <button id="copyTransformedAll" type="button">변환 전체 복사</button>
             </div>
           </div>
+          <div class="key-hint">키보드 탐색: <code>↑</code> <code>↓</code></div>
           <div id="detail" class="detail">
             <div class="empty">목록에서 게시글을 선택하세요.</div>
           </div>
@@ -327,16 +454,26 @@
         filtered: [],
         selectedIndex: -1,
         onlyInsufficient: false,
+        sortOrder: "id_desc",
       };
 
       const fileInput = document.getElementById("csvFile");
+      const dropZone = document.getElementById("dropZone");
       const searchInput = document.getElementById("search");
+      const clearSearchButton = document.getElementById("clearSearch");
       const loadSampleButton = document.getElementById("loadSample");
+      const resetViewButton = document.getElementById("resetView");
       const toggleInsufficientButton = document.getElementById("toggleInsufficient");
+      const sortOrderSelect = document.getElementById("sortOrder");
       const listContainer = document.getElementById("postList");
       const detailContainer = document.getElementById("detail");
       const metaLabel = document.getElementById("meta");
+      const serverHint = document.getElementById("serverHint");
       const countLabel = document.getElementById("countLabel");
+      const statTotal = document.getElementById("statTotal");
+      const statVisible = document.getElementById("statVisible");
+      const statOk = document.getElementById("statOk");
+      const statInsufficient = document.getElementById("statInsufficient");
       const copyOriginalAll = document.getElementById("copyOriginalAll");
       const copyTransformedAll = document.getElementById("copyTransformedAll");
 
@@ -420,9 +557,34 @@
         return text.includes("원문 답변이 없어 안전하게 변환하지 않았어요.");
       }
 
+      function sourceIdNumber(row) {
+        const parsed = Number(row.source_id);
+        return Number.isFinite(parsed) ? parsed : -1;
+      }
+
+      function sortRows(rows) {
+        const sorted = rows.slice();
+        if (state.sortOrder === "id_asc") {
+          sorted.sort((a, b) => sourceIdNumber(a) - sourceIdNumber(b));
+          return sorted;
+        }
+        if (state.sortOrder === "title_asc") {
+          sorted.sort((a, b) =>
+            String(a.original_title || "").localeCompare(
+              String(b.original_title || ""),
+              "ko"
+            )
+          );
+          return sorted;
+        }
+
+        sorted.sort((a, b) => sourceIdNumber(b) - sourceIdNumber(a));
+        return sorted;
+      }
+
       function filteredRows() {
         const query = searchInput.value.trim().toLowerCase();
-        return state.rows.filter((row) => {
+        const filtered = state.rows.filter((row) => {
           if (state.onlyInsufficient && !isInsufficient(row)) {
             return false;
           }
@@ -443,10 +605,36 @@
             .toLowerCase();
           return combined.includes(query);
         });
+        return sortRows(filtered);
+      }
+
+      function updateStats() {
+        const total = state.rows.length;
+        const visible = state.filtered.length;
+        const ok = state.rows.filter((row) => !isInsufficient(row)).length;
+        const insufficient = total - ok;
+
+        statTotal.textContent = String(total);
+        statVisible.textContent = String(visible);
+        statOk.textContent = String(ok);
+        statInsufficient.textContent = String(insufficient);
       }
 
       function setMeta(text) {
         metaLabel.textContent = text;
+      }
+
+      function configureProtocolHint() {
+        if (window.location.protocol === "file:") {
+          loadSampleButton.disabled = true;
+          loadSampleButton.title = "file:// 환경에서는 자동 로드가 차단됩니다.";
+          serverHint.innerHTML =
+            "자동 로드가 필요하면 터미널에서 <code>python -m http.server 8000</code> 실행 후 <code>http://localhost:8000/viewer.html</code>로 접속하세요.";
+          return;
+        }
+
+        serverHint.innerHTML =
+          "서버 모드 권장: <code>python -m http.server 8000</code> 후 <code>http://localhost:8000/viewer.html</code> 접속";
       }
 
       async function copyText(text) {
@@ -476,6 +664,7 @@
           state.selectedIndex = -1;
           listContainer.innerHTML = '<div class="empty">조건에 맞는 게시글이 없습니다.</div>';
           countLabel.textContent = "0건";
+          updateStats();
           renderDetail();
           return;
         }
@@ -505,6 +694,7 @@
 
         listContainer.innerHTML = items;
         countLabel.textContent = `${state.filtered.length}건`;
+        updateStats();
 
         listContainer.querySelectorAll(".post-item").forEach((button) => {
           button.addEventListener("click", () => {
@@ -576,9 +766,66 @@
         });
       }
 
+      async function handleCsvFile(file) {
+        if (!file) {
+          return;
+        }
+
+        if (!String(file.name || "").toLowerCase().endsWith(".csv")) {
+          setMeta("CSV 파일만 업로드할 수 있습니다.");
+          return;
+        }
+
+        try {
+          setMeta(`${file.name} 파일을 읽는 중입니다...`);
+          const text = await readFileAsText(file);
+          await loadCsvText(text, file.name);
+        } catch (error) {
+          const reason = error && error.message ? error.message : String(error);
+          setMeta(`파일 로드 실패: ${reason}`);
+        }
+      }
+
+      function resetFilters() {
+        searchInput.value = "";
+        state.onlyInsufficient = false;
+        state.sortOrder = "id_desc";
+        sortOrderSelect.value = state.sortOrder;
+        toggleInsufficientButton.textContent = "보류건만 보기: OFF";
+        renderList();
+        renderDetail();
+        setMeta("검색/필터/정렬을 초기화했습니다.");
+      }
+
+      function bindDropZone() {
+        const cancel = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        };
+        const onEnter = (event) => {
+          cancel(event);
+          dropZone.classList.add("drag");
+        };
+        const onLeave = (event) => {
+          cancel(event);
+          dropZone.classList.remove("drag");
+        };
+        const onDrop = (event) => {
+          cancel(event);
+          dropZone.classList.remove("drag");
+          const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+          handleCsvFile(file);
+        };
+
+        ["dragenter", "dragover"].forEach((type) => dropZone.addEventListener(type, onEnter));
+        ["dragleave", "drop"].forEach((type) => dropZone.addEventListener(type, onLeave));
+        dropZone.addEventListener("drop", onDrop);
+      }
+
       function applyRows(rows, sourceName) {
         state.rows = rows;
         state.selectedIndex = 0;
+        dropZone.textContent = `${sourceName} 로드됨 - 다른 CSV로 교체하려면 클릭/드롭`;
         renderList();
         renderDetail();
 
@@ -613,17 +860,7 @@
 
       fileInput.addEventListener("change", async (event) => {
         const file = event.target.files && event.target.files[0];
-        if (!file) {
-          return;
-        }
-        try {
-          setMeta(`${file.name} 파일을 읽는 중입니다...`);
-          const text = await readFileAsText(file);
-          await loadCsvText(text, file.name);
-        } catch (error) {
-          const reason = error && error.message ? error.message : String(error);
-          setMeta(`파일 로드 실패: ${reason}`);
-        }
+        await handleCsvFile(file);
       });
 
       loadSampleButton.addEventListener("click", async () => {
@@ -640,6 +877,22 @@
       });
 
       searchInput.addEventListener("input", () => {
+        renderList();
+        renderDetail();
+      });
+
+      clearSearchButton.addEventListener("click", () => {
+        searchInput.value = "";
+        renderList();
+        renderDetail();
+      });
+
+      resetViewButton.addEventListener("click", () => {
+        resetFilters();
+      });
+
+      sortOrderSelect.addEventListener("change", () => {
+        state.sortOrder = sortOrderSelect.value;
         renderList();
         renderDetail();
       });
@@ -682,6 +935,35 @@
           setMeta(`오류: ${reason}`);
         }
       });
+
+      window.addEventListener("keydown", (event) => {
+        const target = event.target;
+        const tagName = target && target.tagName ? String(target.tagName).toUpperCase() : "";
+        if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") {
+          return;
+        }
+        if (state.filtered.length === 0) {
+          return;
+        }
+
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          state.selectedIndex = Math.min(state.filtered.length - 1, state.selectedIndex + 1);
+          renderList();
+          renderDetail();
+        }
+
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          state.selectedIndex = Math.max(0, state.selectedIndex - 1);
+          renderList();
+          renderDetail();
+        }
+      });
+
+      configureProtocolHint();
+      bindDropZone();
+      updateStats();
     </script>
   </body>
 </html>
