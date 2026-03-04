@@ -358,7 +358,7 @@ def collect_all_faq(
 
 def save_a_to_csv(path: str, items: list[FaqItem]) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w", newline="", encoding="utf-8") as fp:
+    with open(path, "w", newline="", encoding="utf-8-sig") as fp:
         writer = csv.DictWriter(fp, fieldnames=A_CSV_FIELDS)
         writer.writeheader()
         for item in items:
@@ -632,7 +632,7 @@ def transform_with_openai(
 
 def save_b_to_csv(path: str, items: list[FaqTransformed]) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w", newline="", encoding="utf-8") as fp:
+    with open(path, "w", newline="", encoding="utf-8-sig") as fp:
         writer = csv.DictWriter(fp, fieldnames=B_CSV_FIELDS)
         writer.writeheader()
         for item in items:
