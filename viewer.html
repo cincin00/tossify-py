@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FAQ 변환 뷰어</title>
+    <style>
+      :root {
+        --bg: #f4f7f1;
+        --bg-accent: #d8efe1;
+        --panel: #ffffff;
+        --line: #d7ded4;
+        --text: #1f2b21;
+        --sub: #536254;
+        --brand: #16794b;
+        --brand-strong: #0f5f3a;
+        --warn: #b14b00;
+        --radius-lg: 18px;
+        --radius-md: 12px;
+        --shadow: 0 14px 36px rgba(21, 54, 38, 0.1);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: "Pretendard", "SUIT", "Noto Sans KR", "Apple SD Gothic Neo",
+          "Malgun Gothic", sans-serif;
+        background:
+          radial-gradient(circle at 10% 10%, var(--bg-accent), transparent 40%),
+          radial-gradient(circle at 90% 0%, #f5e8cf, transparent 35%),
+          var(--bg);
+      }
+
+      .wrap {
+        max-width: 1380px;
+        margin: 28px auto;
+        padding: 0 18px 24px;
+        animation: fade-in 0.4s ease;
+      }
+
+      @keyframes fade-in {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .top {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        background: var(--panel);
+        padding: 16px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .title-line {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(20px, 3vw, 30px);
+        letter-spacing: -0.02em;
+      }
+
+      .badge {
+        color: var(--brand-strong);
+        background: #dff4ea;
+        border: 1px solid #b5dfcb;
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      input[type="file"] {
+        max-width: 320px;
+      }
+
+      input[type="search"] {
+        flex: 1 1 240px;
+        min-width: 200px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 14px;
+      }
+
+      button {
+        border: 1px solid #0f5f3a;
+        border-radius: 10px;
+        padding: 9px 12px;
+        background: var(--brand);
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      button.alt {
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--text);
+      }
+
+      button.warn {
+        border-color: #c86616;
+        background: #ffe7d0;
+        color: #843800;
+      }
+
+      button:hover {
+        filter: brightness(0.97);
+      }
+
+      .meta {
+        color: var(--sub);
+        font-size: 13px;
+      }
+
+      .board {
+        margin-top: 14px;
+        display: grid;
+        gap: 14px;
+        grid-template-columns: 370px minmax(0, 1fr);
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        background: var(--panel);
+        min-height: 620px;
+      }
+
+      .list-head,
+      .detail-head {
+        padding: 14px 16px;
+        border-bottom: 1px solid #e9eee8;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .post-list {
+        max-height: 620px;
+        overflow: auto;
+      }
+
+      .post-item {
+        border: none;
+        width: 100%;
+        text-align: left;
+        border-bottom: 1px solid #f0f3ef;
+        padding: 12px 14px;
+        background: transparent;
+        color: inherit;
+      }
+
+      .post-item:hover {
+        background: #f5faf5;
+      }
+
+      .post-item.active {
+        background: #e8f5ec;
+      }
+
+      .post-title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.45;
+      }
+
+      .post-sub {
+        margin-top: 8px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        color: var(--sub);
+        font-size: 12px;
+      }
+
+      .chip {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 3px 8px;
+        background: #fff;
+      }
+
+      .chip.warn {
+        color: #8f4503;
+        border-color: #e3bb8f;
+        background: #fff3e7;
+      }
+
+      .detail {
+        padding: 14px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .card {
+        border: 1px solid #e5ece5;
+        border-radius: var(--radius-md);
+        background: #fcfefd;
+      }
+
+      .card-head {
+        padding: 10px 12px;
+        border-bottom: 1px solid #edf2ed;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .card-title {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      pre {
+        margin: 0;
+        padding: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        line-height: 1.52;
+        font-size: 14px;
+      }
+
+      .empty {
+        padding: 30px 18px;
+        color: var(--sub);
+        text-align: center;
+      }
+
+      .hint {
+        margin-top: 8px;
+        color: var(--sub);
+        font-size: 12px;
+      }
+
+      @media (max-width: 1080px) {
+        .board {
+          grid-template-columns: 1fr;
+        }
+
+        .panel,
+        .post-list {
+          min-height: 460px;
+          max-height: 460px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <section class="top">
+        <div class="title-line">
+          <h1>FAQ 변환 CSV 뷰어</h1>
+          <span class="badge">HTML 단일 파일</span>
+        </div>
+        <div class="controls">
+          <input id="csvFile" type="file" accept=".csv,text/csv" />
+          <button id="loadSample" class="alt" type="button">data/faq_b.csv 자동 로드</button>
+          <input id="search" type="search" placeholder="제목/질문/원문/변환 내용 검색" />
+          <button id="toggleInsufficient" class="warn" type="button">보류건만 보기: OFF</button>
+        </div>
+        <div id="meta" class="meta">CSV를 선택하면 목록/상세를 볼 수 있습니다.</div>
+        <div class="hint">
+          로컬 파일(`file://`) 환경에서는 보안정책으로 자동 로드가 막힐 수 있습니다. 이 경우 좌측 파일 선택 버튼으로 `faq_b.csv`를 직접 업로드하세요.
+        </div>
+      </section>
+
+      <section class="board">
+        <article class="panel">
+          <div class="list-head">
+            <span>게시글 목록</span>
+            <span id="countLabel" class="meta">0건</span>
+          </div>
+          <div id="postList" class="post-list">
+            <div class="empty">데이터를 불러오면 목록이 표시됩니다.</div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="detail-head">
+            <span>게시글 상세</span>
+            <div>
+              <button id="copyOriginalAll" class="alt" type="button">원문 전체 복사</button>
+              <button id="copyTransformedAll" type="button">변환 전체 복사</button>
+            </div>
+          </div>
+          <div id="detail" class="detail">
+            <div class="empty">목록에서 게시글을 선택하세요.</div>
+          </div>
+        </article>
+      </section>
+    </div>
+
+    <script>
+      const state = {
+        rows: [],
+        filtered: [],
+        selectedIndex: -1,
+        onlyInsufficient: false,
+      };
+
+      const fileInput = document.getElementById("csvFile");
+      const searchInput = document.getElementById("search");
+      const loadSampleButton = document.getElementById("loadSample");
+      const toggleInsufficientButton = document.getElementById("toggleInsufficient");
+      const listContainer = document.getElementById("postList");
+      const detailContainer = document.getElementById("detail");
+      const metaLabel = document.getElementById("meta");
+      const countLabel = document.getElementById("countLabel");
+      const copyOriginalAll = document.getElementById("copyOriginalAll");
+      const copyTransformedAll = document.getElementById("copyTransformedAll");
+
+      function parseCsv(text) {
+        const rows = [];
+        let row = [];
+        let cell = "";
+        let i = 0;
+        let inQuotes = false;
+
+        const clean = text.replace(/^\uFEFF/, "");
+
+        while (i < clean.length) {
+          const ch = clean[i];
+
+          if (inQuotes) {
+            if (ch === '"') {
+              if (clean[i + 1] === '"') {
+                cell += '"';
+                i += 2;
+                continue;
+              }
+              inQuotes = false;
+              i += 1;
+              continue;
+            }
+            cell += ch;
+            i += 1;
+            continue;
+          }
+
+          if (ch === '"') {
+            inQuotes = true;
+            i += 1;
+            continue;
+          }
+          if (ch === ",") {
+            row.push(cell);
+            cell = "";
+            i += 1;
+            continue;
+          }
+          if (ch === "\n") {
+            row.push(cell);
+            rows.push(row);
+            row = [];
+            cell = "";
+            i += 1;
+            continue;
+          }
+          if (ch === "\r") {
+            i += 1;
+            continue;
+          }
+
+          cell += ch;
+          i += 1;
+        }
+
+        row.push(cell);
+        if (row.length > 1 || row[0] !== "") {
+          rows.push(row);
+        }
+
+        if (rows.length === 0) {
+          return [];
+        }
+
+        const header = rows[0];
+        return rows.slice(1).map((values) => {
+          const obj = {};
+          for (let idx = 0; idx < header.length; idx += 1) {
+            obj[header[idx]] = values[idx] || "";
+          }
+          return obj;
+        });
+      }
+
+      function isInsufficient(row) {
+        const text = row.transformed_text || "";
+        return text.includes("원문 답변이 없어 안전하게 변환하지 않았어요.");
+      }
+
+      function filteredRows() {
+        const query = searchInput.value.trim().toLowerCase();
+        return state.rows.filter((row) => {
+          if (state.onlyInsufficient && !isInsufficient(row)) {
+            return false;
+          }
+
+          if (!query) {
+            return true;
+          }
+
+          const combined = [
+            row.source_id,
+            row.original_title,
+            row.original_question,
+            row.original_answer,
+            row.transformed_text,
+            row.model,
+          ]
+            .join("\n")
+            .toLowerCase();
+          return combined.includes(query);
+        });
+      }
+
+      function setMeta(text) {
+        metaLabel.textContent = text;
+      }
+
+      async function copyText(text) {
+        if (!text) {
+          setMeta("복사할 내용이 없습니다.");
+          return;
+        }
+
+        try {
+          await navigator.clipboard.writeText(text);
+          setMeta("클립보드에 복사했습니다.");
+        } catch (error) {
+          const textarea = document.createElement("textarea");
+          textarea.value = text;
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand("copy");
+          textarea.remove();
+          setMeta("클립보드에 복사했습니다.");
+        }
+      }
+
+      function renderList() {
+        state.filtered = filteredRows();
+
+        if (state.filtered.length === 0) {
+          state.selectedIndex = -1;
+          listContainer.innerHTML = '<div class="empty">조건에 맞는 게시글이 없습니다.</div>';
+          countLabel.textContent = "0건";
+          renderDetail();
+          return;
+        }
+
+        if (state.selectedIndex < 0 || state.selectedIndex >= state.filtered.length) {
+          state.selectedIndex = 0;
+        }
+
+        const items = state.filtered
+          .map((row, index) => {
+            const activeClass = index === state.selectedIndex ? "active" : "";
+            const warnChip = isInsufficient(row)
+              ? '<span class="chip warn">insufficient</span>'
+              : '<span class="chip">ok</span>';
+            return `
+              <button class="post-item ${activeClass}" data-index="${index}">
+                <p class="post-title">${escapeHtml(row.original_title || "(제목 없음)")}</p>
+                <div class="post-sub">
+                  <span class="chip">ID ${escapeHtml(row.source_id || "-")}</span>
+                  ${warnChip}
+                  <span class="chip">${escapeHtml(row.model || "-")}</span>
+                </div>
+              </button>
+            `;
+          })
+          .join("");
+
+        listContainer.innerHTML = items;
+        countLabel.textContent = `${state.filtered.length}건`;
+
+        listContainer.querySelectorAll(".post-item").forEach((button) => {
+          button.addEventListener("click", () => {
+            state.selectedIndex = Number(button.dataset.index);
+            renderList();
+            renderDetail();
+          });
+        });
+      }
+
+      function renderCard(title, text, copyLabel) {
+        const escapedTitle = escapeHtml(title);
+        const escapedText = escapeHtml(text || "(내용 없음)");
+        return `
+          <section class="card">
+            <div class="card-head">
+              <p class="card-title">${escapedTitle}</p>
+              <button class="alt copy-btn" data-copy="${encodeURIComponent(text || "")}" type="button">${escapeHtml(copyLabel)}</button>
+            </div>
+            <pre>${escapedText}</pre>
+          </section>
+        `;
+      }
+
+      function renderDetail() {
+        if (state.selectedIndex < 0 || state.selectedIndex >= state.filtered.length) {
+          detailContainer.innerHTML = '<div class="empty">목록에서 게시글을 선택하세요.</div>';
+          return;
+        }
+
+        const row = state.filtered[state.selectedIndex];
+        detailContainer.innerHTML = [
+          renderCard(
+            `메타 정보 (ID: ${row.source_id || "-"}, 모델: ${row.model || "-"})`,
+            `제목: ${row.original_title || ""}\n질문: ${row.original_question || ""}`,
+            "메타 복사"
+          ),
+          renderCard("원문 질문", row.original_question || "", "질문 복사"),
+          renderCard("원문 답변", row.original_answer || "", "원문 복사"),
+          renderCard("변환 결과", row.transformed_text || "", "변환 복사"),
+        ].join("");
+
+        detailContainer.querySelectorAll(".copy-btn").forEach((button) => {
+          button.addEventListener("click", () => {
+            copyText(decodeURIComponent(button.dataset.copy || ""));
+          });
+        });
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function applyRows(rows, sourceName) {
+        state.rows = rows;
+        state.selectedIndex = 0;
+        renderList();
+        renderDetail();
+
+        const insufficientCount = rows.filter((row) => isInsufficient(row)).length;
+        setMeta(
+          `${sourceName} 로드 완료: 총 ${rows.length}건, 보류 ${insufficientCount}건, 정상 ${
+            rows.length - insufficientCount
+          }건`
+        );
+      }
+
+      async function loadCsvText(text, sourceName) {
+        const rows = parseCsv(text);
+        if (rows.length === 0) {
+          setMeta(`${sourceName}: CSV 파싱 결과가 비어 있습니다.`);
+          state.rows = [];
+          renderList();
+          return;
+        }
+
+        const required = ["source_id", "original_title", "original_answer", "transformed_text"];
+        const missing = required.filter((key) => !(key in rows[0]));
+        if (missing.length > 0) {
+          setMeta(`필수 컬럼 누락: ${missing.join(", ")}`);
+          state.rows = [];
+          renderList();
+          return;
+        }
+
+        applyRows(rows, sourceName);
+      }
+
+      fileInput.addEventListener("change", async (event) => {
+        const file = event.target.files && event.target.files[0];
+        if (!file) {
+          return;
+        }
+        const text = await file.text();
+        loadCsvText(text, file.name);
+      });
+
+      loadSampleButton.addEventListener("click", async () => {
+        try {
+          const response = await fetch("data/faq_b.csv", { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          const text = await response.text();
+          loadCsvText(text, "data/faq_b.csv");
+        } catch (error) {
+          setMeta("자동 로드에 실패했습니다. 파일 선택으로 직접 업로드해 주세요.");
+        }
+      });
+
+      searchInput.addEventListener("input", () => {
+        renderList();
+        renderDetail();
+      });
+
+      toggleInsufficientButton.addEventListener("click", () => {
+        state.onlyInsufficient = !state.onlyInsufficient;
+        toggleInsufficientButton.textContent = `보류건만 보기: ${state.onlyInsufficient ? "ON" : "OFF"}`;
+        renderList();
+        renderDetail();
+      });
+
+      copyOriginalAll.addEventListener("click", () => {
+        if (state.selectedIndex < 0 || state.selectedIndex >= state.filtered.length) {
+          setMeta("선택된 게시글이 없습니다.");
+          return;
+        }
+        const row = state.filtered[state.selectedIndex];
+        copyText(`제목: ${row.original_title || ""}\n질문: ${row.original_question || ""}\n답변: ${row.original_answer || ""}`);
+      });
+
+      copyTransformedAll.addEventListener("click", () => {
+        if (state.selectedIndex < 0 || state.selectedIndex >= state.filtered.length) {
+          setMeta("선택된 게시글이 없습니다.");
+          return;
+        }
+        const row = state.filtered[state.selectedIndex];
+        copyText(row.transformed_text || "");
+      });
+    </script>
+  </body>
+</html>
