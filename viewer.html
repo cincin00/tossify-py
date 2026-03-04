@@ -70,6 +70,12 @@
         gap: 12px;
       }
 
+      .title-tools {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
       h1 {
         margin: 0;
         font-size: clamp(20px, 3vw, 30px);
@@ -86,11 +92,30 @@
         font-weight: 600;
       }
 
+      .controls-grid {
+        display: grid;
+        gap: 8px;
+      }
+
       .controls {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
         align-items: center;
+      }
+
+      .controls-primary {
+        border: 1px solid #e8efe6;
+        border-radius: 12px;
+        background: #f9fcf8;
+        padding: 10px;
+      }
+
+      .controls-secondary {
+        border: 1px solid #e8efe6;
+        border-radius: 12px;
+        background: #fdfefd;
+        padding: 10px;
       }
 
       .file-input {
@@ -108,6 +133,7 @@
         color: #1d5138;
         padding: 10px 14px;
         min-width: 260px;
+        flex: 1 1 320px;
         font-size: 13px;
         font-weight: 600;
         cursor: pointer;
@@ -125,12 +151,13 @@
       }
 
       input[type="search"] {
-        flex: 1 1 240px;
+        flex: 1 1 320px;
         min-width: 200px;
         border: 1px solid var(--line);
         border-radius: 10px;
         padding: 10px 12px;
         font-size: 14px;
+        background: #fff;
       }
 
       select {
@@ -217,7 +244,7 @@
         border: 1px solid var(--line);
         border-radius: var(--radius-lg);
         box-shadow: var(--shadow);
-        background: var(--panel);
+        background: #fbfdfb;
         min-height: 620px;
       }
 
@@ -232,6 +259,16 @@
         gap: 8px;
       }
 
+      .detail-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .detail-actions button {
+        min-width: 104px;
+      }
+
       .post-list {
         max-height: 620px;
         overflow: auto;
@@ -241,8 +278,9 @@
         border: none;
         width: 100%;
         text-align: left;
+        border-left: 4px solid transparent;
         border-bottom: 1px solid #f0f3ef;
-        padding: 12px 14px;
+        padding: 11px 14px;
         background: transparent;
         color: inherit;
       }
@@ -252,18 +290,40 @@
       }
 
       .post-item.active {
+        border-left-color: var(--brand);
         background: #e8f5ec;
       }
 
       .post-title {
         margin: 0;
-        font-size: 14px;
+        font-size: 15px;
         font-weight: 700;
         line-height: 1.45;
+        display: -webkit-box;
+        -webkit-line-clamp: 1;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      .post-question {
+        margin: 6px 0 0;
+        color: #5f6d60;
+        font-size: 11px;
+        line-height: 1.45;
+        display: none;
+        -webkit-line-clamp: 1;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      .post-item.active .post-question,
+      .post-item:hover .post-question,
+      .post-item:focus-visible .post-question {
+        display: -webkit-box;
       }
 
       .post-sub {
-        margin-top: 8px;
+        margin-top: 7px;
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
@@ -274,7 +334,7 @@
       .chip {
         border: 1px solid var(--line);
         border-radius: 999px;
-        padding: 3px 8px;
+        padding: 2px 7px;
         background: #fff;
       }
 
@@ -284,21 +344,32 @@
         background: #fff3e7;
       }
 
+      .model-chip {
+        opacity: 0.86;
+      }
+
+      .post-item:not(.active) .model-chip {
+        display: none;
+      }
+
       .detail {
         padding: 14px;
         display: grid;
-        gap: 12px;
+        gap: 14px;
+        background: #f7faf7;
+        border-radius: 0 0 var(--radius-lg) var(--radius-lg);
       }
 
       .card {
-        border: 1px solid #e5ece5;
+        border: 1px solid #dde7df;
         border-radius: var(--radius-md);
-        background: #fcfefd;
+        background: #ffffff;
+        box-shadow: 0 1px 0 rgba(26, 52, 36, 0.03);
       }
 
       .card-head {
         padding: 10px 12px;
-        border-bottom: 1px solid #edf2ed;
+        border-bottom: 1px solid #e7eee8;
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -313,11 +384,12 @@
 
       pre {
         margin: 0;
-        padding: 12px;
+        padding: 15px 16px 17px;
         white-space: pre-wrap;
         word-break: break-word;
-        line-height: 1.52;
-        font-size: 14px;
+        line-height: 1.72;
+        font-size: 15px;
+        max-width: 98ch;
       }
 
       .empty {
@@ -340,21 +412,137 @@
       }
 
       .key-hint {
-        color: var(--sub);
-        font-size: 12px;
-        margin-left: 8px;
+        margin: 0;
+        color: #69806e;
+        font-size: 11px;
+        font-weight: 500;
       }
 
       .key-hint code {
-        background: #eff5ee;
-        border: 1px solid #d6e1d6;
+        background: #eef5ee;
+        border: 1px solid #d5e2d6;
         border-radius: 8px;
         padding: 1px 6px;
+      }
+
+      .detail-heading {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .copy-btn {
+        padding: 7px 10px;
+        font-size: 12px;
+      }
+
+      .guide-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 9500;
+        background: rgba(17, 34, 23, 0.46);
+        padding: 0;
+      }
+
+      .guide-overlay[hidden] {
+        display: none;
+      }
+
+      .guide-card {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 9700;
+        width: min(460px, calc(100vw - 32px));
+        border-radius: 16px;
+        background: #ffffff;
+        border: 1px solid #d8e4d8;
+        box-shadow: 0 22px 48px rgba(15, 44, 30, 0.22);
+        padding: 16px 16px 14px;
+      }
+
+      .guide-step {
+        margin: 0;
+        color: #57705f;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .guide-title {
+        margin: 8px 0 0;
+        font-size: 20px;
+        line-height: 1.3;
+      }
+
+      .guide-desc {
+        margin: 10px 0 0;
+        color: #35503f;
+        line-height: 1.58;
+        font-size: 14px;
+      }
+
+      .guide-actions {
+        margin-top: 14px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .guide-focus {
+        position: relative;
+        z-index: 9600;
+        outline: 2px solid #1a8b56;
+        outline-offset: 2px;
+        border-radius: 12px;
+        box-shadow: 0 0 0 4px rgba(26, 139, 86, 0.18);
+      }
+
+      .post-item.guide-focus {
+        outline: none;
+        box-shadow:
+          inset 0 0 0 2px #1a8b56,
+          0 0 0 3px rgba(26, 139, 86, 0.2);
+      }
+
+      .toast {
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        z-index: 9999;
+        min-width: 180px;
+        max-width: 360px;
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: #1a7f4f;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 700;
+        box-shadow: 0 12px 26px rgba(22, 66, 44, 0.24);
+        opacity: 0;
+        transform: translateY(10px);
+        pointer-events: none;
+        transition: opacity 0.18s ease, transform 0.18s ease;
+      }
+
+      .toast.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .toast.error {
+        background: #b14b00;
       }
 
       @media (max-width: 1080px) {
         .stats {
           grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .controls-primary,
+        .controls-secondary {
+          padding: 8px;
         }
 
         .board {
@@ -372,6 +560,17 @@
         .stats {
           grid-template-columns: 1fr;
         }
+
+        .controls {
+          align-items: stretch;
+        }
+
+        .upload-box,
+        input[type="search"],
+        select,
+        button {
+          width: 100%;
+        }
       }
     </style>
   </head>
@@ -380,25 +579,31 @@
       <section class="top">
         <div class="title-line">
           <h1>FAQ 변환 CSV 뷰어</h1>
-          <span class="badge">HTML 단일 파일</span>
+          <div class="title-tools">
+            <button id="openGuide" class="alt" type="button">가이드 다시 보기</button>
+            <span class="badge">HTML 단일 파일</span>
+          </div>
         </div>
-        <div class="controls">
-          <input id="csvFile" class="file-input" type="file" accept=".csv,text/csv" />
-          <label id="dropZone" class="upload-box" for="csvFile">CSV 파일 선택 또는 드래그 앤 드롭</label>
-          <button id="loadSample" class="alt" type="button">data/faq_b.csv 자동 로드</button>
-          <button id="resetView" class="alt" type="button">필터 초기화</button>
-          <input id="search" type="search" placeholder="제목/질문/원문/변환 내용 검색" />
-          <button id="clearSearch" class="alt" type="button">검색 비우기</button>
-          <select id="sortOrder" aria-label="정렬 순서">
-            <option value="id_desc">정렬: ID 큰 순</option>
-            <option value="id_asc">정렬: ID 작은 순</option>
-            <option value="title_asc">정렬: 제목 가나다순</option>
-          </select>
-          <button id="toggleInsufficient" class="warn" type="button">보류건만 보기: OFF</button>
+        <div class="controls-grid">
+          <div class="controls controls-primary">
+            <input id="csvFile" class="file-input" type="file" accept=".csv,text/csv" />
+            <label id="dropZone" class="upload-box" for="csvFile">CSV 파일 선택 또는 드래그 앤 드롭</label>
+            <button id="resetView" class="alt" type="button">필터 초기화</button>
+          </div>
+          <div class="controls controls-secondary">
+            <input id="search" type="search" placeholder="제목/질문/원문/변환 내용 검색" />
+            <button id="clearSearch" class="alt" type="button">검색 비우기</button>
+            <select id="sortOrder" aria-label="정렬 순서">
+              <option value="id_desc">정렬: ID 큰 순</option>
+              <option value="id_asc">정렬: ID 작은 순</option>
+              <option value="title_asc">정렬: 제목 가나다순</option>
+            </select>
+            <button id="toggleInsufficient" class="warn" type="button">보류건만 보기: OFF</button>
+          </div>
         </div>
         <div id="meta" class="meta">CSV를 선택하면 목록/상세를 볼 수 있습니다.</div>
         <div class="hint">
-          로컬 파일(`file://`) 환경에서는 보안정책으로 자동 로드가 막힐 수 있습니다. 이 경우 좌측 파일 선택 버튼으로 `faq_b.csv`를 직접 업로드하세요.
+          로컬 파일(`file://`) 환경에서는 브라우저 보안 정책상 파일 선택 방식만 동작합니다. `faq_b.csv`를 직접 선택해서 업로드하세요.
         </div>
         <div id="serverHint" class="hint"></div>
         <div class="stats">
@@ -434,18 +639,33 @@
 
         <article class="panel">
           <div class="detail-head">
-            <span>게시글 상세</span>
-            <div>
+            <div class="detail-heading">
+              <span>게시글 상세</span>
+              <p class="key-hint">키보드 탐색: <code>↑</code> <code>↓</code></p>
+            </div>
+            <div id="copyActions" class="detail-actions">
               <button id="copyOriginalAll" class="alt" type="button">원문 전체 복사</button>
               <button id="copyTransformedAll" type="button">변환 전체 복사</button>
             </div>
           </div>
-          <div class="key-hint">키보드 탐색: <code>↑</code> <code>↓</code></div>
           <div id="detail" class="detail">
             <div class="empty">목록에서 게시글을 선택하세요.</div>
           </div>
         </article>
       </section>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="guideOverlay" class="guide-overlay" hidden>
+      <div class="guide-card" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
+        <p id="guideStep" class="guide-step"></p>
+        <h2 id="guideTitle" class="guide-title"></h2>
+        <p id="guideDesc" class="guide-desc"></p>
+        <div class="guide-actions">
+          <button id="guideSkip" class="alt" type="button">닫기</button>
+          <button id="guidePrev" class="alt" type="button">이전</button>
+          <button id="guideNext" type="button">다음</button>
+        </div>
+      </div>
     </div>
 
     <script>
@@ -459,9 +679,9 @@
 
       const fileInput = document.getElementById("csvFile");
       const dropZone = document.getElementById("dropZone");
+      const openGuideButton = document.getElementById("openGuide");
       const searchInput = document.getElementById("search");
       const clearSearchButton = document.getElementById("clearSearch");
-      const loadSampleButton = document.getElementById("loadSample");
       const resetViewButton = document.getElementById("resetView");
       const toggleInsufficientButton = document.getElementById("toggleInsufficient");
       const sortOrderSelect = document.getElementById("sortOrder");
@@ -474,8 +694,27 @@
       const statVisible = document.getElementById("statVisible");
       const statOk = document.getElementById("statOk");
       const statInsufficient = document.getElementById("statInsufficient");
+      const copyActions = document.getElementById("copyActions");
       const copyOriginalAll = document.getElementById("copyOriginalAll");
       const copyTransformedAll = document.getElementById("copyTransformedAll");
+      const toast = document.getElementById("toast");
+      const guideOverlay = document.getElementById("guideOverlay");
+      const guideCard = guideOverlay.querySelector(".guide-card");
+      const guideStepLabel = document.getElementById("guideStep");
+      const guideTitleLabel = document.getElementById("guideTitle");
+      const guideDescLabel = document.getElementById("guideDesc");
+      const guideSkipButton = document.getElementById("guideSkip");
+      const guidePrevButton = document.getElementById("guidePrev");
+      const guideNextButton = document.getElementById("guideNext");
+      const GUIDE_STORAGE_KEY = "faq_viewer_guide_seen_v1";
+      let toastTimer = null;
+      let guideTimer = null;
+      let guideOpen = false;
+      let guideIndex = 0;
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
 
       function parseCsv(text) {
         const rows = [];
@@ -620,40 +859,232 @@
         statInsufficient.textContent = String(insufficient);
       }
 
+      function previewQuestion(row) {
+        const raw = String(row.original_question || row.original_title || "");
+        return raw.replace(/\s+/g, " ").trim();
+      }
+
       function setMeta(text) {
         metaLabel.textContent = text;
       }
 
+      function showToast(message, isError) {
+        toast.textContent = message;
+        if (isError) {
+          toast.classList.add("error");
+        } else {
+          toast.classList.remove("error");
+        }
+        toast.classList.add("show");
+        if (toastTimer) {
+          clearTimeout(toastTimer);
+        }
+        toastTimer = setTimeout(() => {
+          toast.classList.remove("show");
+        }, 1400);
+      }
+
+      function hasSeenGuide() {
+        try {
+          return window.localStorage.getItem(GUIDE_STORAGE_KEY) === "1";
+        } catch (error) {
+          return false;
+        }
+      }
+
+      function markGuideSeen() {
+        try {
+          window.localStorage.setItem(GUIDE_STORAGE_KEY, "1");
+        } catch (error) {
+          // ignore
+        }
+      }
+
+      function getListGuideTarget() {
+        return (
+          listContainer.querySelector(".post-item.active") ||
+          listContainer.querySelector(".post-item") ||
+          listContainer
+        );
+      }
+
+      function getGuideSteps() {
+        return [
+          {
+            title: "CSV 파일 불러오기",
+            desc: "`CSV 파일 선택 또는 드래그 앤 드롭` 영역에서 faq_b.csv를 업로드하면 목록/상세가 채워져요.",
+            element: dropZone,
+          },
+          {
+            title: "검색·정렬·보류 필터",
+            desc: "제목/질문/본문 검색, 정렬 변경, 보류건만 보기 필터로 원하는 글을 빠르게 찾을 수 있어요.",
+            element: searchInput,
+          },
+          {
+            title: "게시글 목록 탐색",
+            desc: "왼쪽 목록에서 게시글을 선택하면 오른쪽 상세가 즉시 바뀌고, 키보드 ↑ ↓ 로도 이동할 수 있어요.",
+            element: getListGuideTarget(),
+          },
+          {
+            title: "원문/변환 복사",
+            desc: "게시글을 선택한 뒤 상세 카드 복사 버튼 또는 상단 전체 복사 버튼으로 원문/변환 내용을 바로 복사할 수 있어요.",
+            element: copyActions || detailContainer,
+          },
+        ];
+      }
+
+      function clearGuideFocus() {
+        document.querySelectorAll(".guide-focus").forEach((element) => {
+          element.classList.remove("guide-focus");
+        });
+      }
+
+      function focusGuideTarget(step) {
+        clearGuideFocus();
+        if (!step || !step.element || typeof step.element.classList === "undefined") {
+          return;
+        }
+        step.element.classList.add("guide-focus");
+        if (typeof step.element.scrollIntoView === "function") {
+          step.element.scrollIntoView({ behavior: "auto", block: "center", inline: "nearest" });
+        }
+      }
+
+      function positionGuideCard(step) {
+        if (!guideCard) {
+          return;
+        }
+
+        guideCard.style.top = "50%";
+        guideCard.style.left = "50%";
+        guideCard.style.transform = "translate(-50%, -50%)";
+
+        if (!step || !step.element || typeof step.element.getBoundingClientRect !== "function") {
+          return;
+        }
+
+        const margin = 16;
+        const gap = 12;
+        const rawRect = step.element.getBoundingClientRect();
+        const cardRect = guideCard.getBoundingClientRect();
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const cardWidth = Math.min(cardRect.width || 460, viewportWidth - margin * 2);
+        const cardHeight = cardRect.height || 240;
+        const isHugeTarget = rawRect.height > viewportHeight * 0.56;
+        const targetHeight = isHugeTarget
+          ? Math.max(96, Math.min(150, Math.floor(viewportHeight * 0.26)))
+          : rawRect.height;
+        const targetTop = isHugeTarget ? rawRect.top + 8 : rawRect.top;
+        const targetRect = {
+          top: targetTop,
+          left: rawRect.left,
+          width: rawRect.width,
+          height: targetHeight,
+          right: rawRect.left + rawRect.width,
+          bottom: targetTop + targetHeight,
+        };
+
+        let left = targetRect.left + (targetRect.width - cardWidth) / 2;
+        if (targetRect.right + gap + cardWidth <= viewportWidth - margin) {
+          left = targetRect.right + gap;
+        } else if (targetRect.left - gap - cardWidth >= margin) {
+          left = targetRect.left - gap - cardWidth;
+        }
+
+        const spaceBelow = viewportHeight - targetRect.bottom;
+        const spaceAbove = targetRect.top;
+        let top = targetRect.bottom + gap;
+        if (spaceBelow < cardHeight + gap + margin && spaceAbove > spaceBelow) {
+          top = targetRect.top - cardHeight - gap;
+        }
+
+        guideCard.style.left = `${Math.round(clamp(left, margin, viewportWidth - cardWidth - margin))}px`;
+        guideCard.style.top = `${Math.round(clamp(top, margin, viewportHeight - cardHeight - margin))}px`;
+        guideCard.style.transform = "none";
+      }
+
+      function renderGuideStep() {
+        const steps = getGuideSteps();
+        const step = steps[guideIndex];
+        guideStepLabel.textContent = `가이드 ${guideIndex + 1}/${steps.length}`;
+        guideTitleLabel.textContent = step.title;
+        guideDescLabel.textContent = step.desc;
+        guidePrevButton.disabled = guideIndex === 0;
+        guideNextButton.textContent = guideIndex === steps.length - 1 ? "시작하기" : "다음";
+        focusGuideTarget(step);
+        window.requestAnimationFrame(() => {
+          positionGuideCard(step);
+        });
+      }
+
+      function openGuide(startIndex) {
+        const steps = getGuideSteps();
+        guideIndex = Math.max(0, Math.min(steps.length - 1, startIndex || 0));
+        guideOpen = true;
+        guideOverlay.hidden = false;
+        document.body.style.overflow = "hidden";
+        renderGuideStep();
+      }
+
+      function closeGuide(markSeen) {
+        guideOpen = false;
+        guideOverlay.hidden = true;
+        document.body.style.overflow = "";
+        clearGuideFocus();
+        if (markSeen) {
+          markGuideSeen();
+        }
+      }
+
+      function scheduleInitialGuide() {
+        if (hasSeenGuide()) {
+          return;
+        }
+        if (guideTimer) {
+          clearTimeout(guideTimer);
+        }
+        guideTimer = setTimeout(() => {
+          openGuide(0);
+        }, 320);
+      }
+
       function configureProtocolHint() {
         if (window.location.protocol === "file:") {
-          loadSampleButton.disabled = true;
-          loadSampleButton.title = "file:// 환경에서는 자동 로드가 차단됩니다.";
           serverHint.innerHTML =
-            "자동 로드가 필요하면 터미널에서 <code>python -m http.server 8000</code> 실행 후 <code>http://localhost:8000/viewer.html</code>로 접속하세요.";
+            "file://에서는 CSV를 직접 선택해 업로드하세요. 서버 모드가 필요하면 <code>python -m http.server 8000</code> 후 <code>http://localhost:8000/viewer.html</code>로 접속하세요.";
           return;
         }
 
         serverHint.innerHTML =
-          "서버 모드 권장: <code>python -m http.server 8000</code> 후 <code>http://localhost:8000/viewer.html</code> 접속";
+          "브라우저의 CSV 접근 이슈가 있으면 서버 모드 권장: <code>python -m http.server 8000</code> 후 <code>http://localhost:8000/viewer.html</code> 접속";
       }
 
       async function copyText(text) {
         if (!text) {
           setMeta("복사할 내용이 없습니다.");
+          showToast("복사할 내용이 없습니다.", true);
           return;
         }
 
         try {
           await navigator.clipboard.writeText(text);
           setMeta("클립보드에 복사했습니다.");
+          showToast("복사 완료", false);
         } catch (error) {
-          const textarea = document.createElement("textarea");
-          textarea.value = text;
-          document.body.appendChild(textarea);
-          textarea.select();
-          document.execCommand("copy");
-          textarea.remove();
-          setMeta("클립보드에 복사했습니다.");
+          try {
+            const textarea = document.createElement("textarea");
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand("copy");
+            textarea.remove();
+            setMeta("클립보드에 복사했습니다.");
+            showToast("복사 완료", false);
+          } catch (fallbackError) {
+            setMeta("복사에 실패했습니다.");
+            showToast("복사 실패", true);
+          }
         }
       }
 
@@ -676,16 +1107,17 @@
         const items = state.filtered
           .map((row, index) => {
             const activeClass = index === state.selectedIndex ? "active" : "";
-            const warnChip = isInsufficient(row)
-              ? '<span class="chip warn">insufficient</span>'
-              : '<span class="chip">ok</span>';
+            const statusChip = isInsufficient(row)
+              ? '<span class="chip warn">보류</span>'
+              : '<span class="chip">정상</span>';
             return `
               <button class="post-item ${activeClass}" data-index="${index}">
                 <p class="post-title">${escapeHtml(row.original_title || "(제목 없음)")}</p>
+                <p class="post-question">${escapeHtml(previewQuestion(row))}</p>
                 <div class="post-sub">
                   <span class="chip">ID ${escapeHtml(row.source_id || "-")}</span>
-                  ${warnChip}
-                  <span class="chip">${escapeHtml(row.model || "-")}</span>
+                  ${statusChip}
+                  <span class="chip model-chip">${escapeHtml(row.model || "-")}</span>
                 </div>
               </button>
             `;
@@ -754,10 +1186,7 @@
       }
 
       function readFileAsText(file) {
-        if (file && typeof file.text === "function") {
-          return file.text();
-        }
-
+        // file:// 환경 호환을 위해 FileReader 표준 API를 고정 사용한다.
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(String(reader.result || ""));
@@ -863,19 +1292,6 @@
         await handleCsvFile(file);
       });
 
-      loadSampleButton.addEventListener("click", async () => {
-        try {
-          const response = await fetch("data/faq_b.csv", { cache: "no-store" });
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
-          const text = await response.text();
-          await loadCsvText(text, "data/faq_b.csv");
-        } catch (error) {
-          setMeta("자동 로드에 실패했습니다. 파일 선택으로 직접 업로드해 주세요.");
-        }
-      });
-
       searchInput.addEventListener("input", () => {
         renderList();
         renderDetail();
@@ -902,6 +1318,43 @@
         toggleInsufficientButton.textContent = `보류건만 보기: ${state.onlyInsufficient ? "ON" : "OFF"}`;
         renderList();
         renderDetail();
+      });
+
+      openGuideButton.addEventListener("click", () => {
+        openGuide(0);
+      });
+
+      guideSkipButton.addEventListener("click", () => {
+        closeGuide(true);
+      });
+
+      guidePrevButton.addEventListener("click", () => {
+        guideIndex = Math.max(0, guideIndex - 1);
+        renderGuideStep();
+      });
+
+      guideNextButton.addEventListener("click", () => {
+        const steps = getGuideSteps();
+        if (guideIndex >= steps.length - 1) {
+          closeGuide(true);
+          return;
+        }
+        guideIndex += 1;
+        renderGuideStep();
+      });
+
+      guideOverlay.addEventListener("click", (event) => {
+        if (event.target === guideOverlay) {
+          closeGuide(true);
+        }
+      });
+
+      window.addEventListener("resize", () => {
+        if (!guideOpen) {
+          return;
+        }
+        const step = getGuideSteps()[guideIndex];
+        positionGuideCard(step);
       });
 
       copyOriginalAll.addEventListener("click", () => {
@@ -937,6 +1390,27 @@
       });
 
       window.addEventListener("keydown", (event) => {
+        if (guideOpen) {
+          if (event.key === "Escape") {
+            closeGuide(true);
+            return;
+          }
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            const steps = getGuideSteps();
+            guideIndex = Math.min(steps.length - 1, guideIndex + 1);
+            renderGuideStep();
+            return;
+          }
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            guideIndex = Math.max(0, guideIndex - 1);
+            renderGuideStep();
+            return;
+          }
+          return;
+        }
+
         const target = event.target;
         const tagName = target && target.tagName ? String(target.tagName).toUpperCase() : "";
         if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") {
@@ -964,6 +1438,7 @@
       configureProtocolHint();
       bindDropZone();
       updateStats();
+      scheduleInitialGuide();
     </script>
   </body>
 </html>
