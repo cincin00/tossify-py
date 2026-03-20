@@ -21,6 +21,13 @@ COLON_CODE_LINE_PATTERN = re.compile(
     r"^(\s*(?:[-*]\s+|\d+\.\s+)?[^:\n]{0,120}:\s*)(.+)$"
 )
 INVALID_FILENAME_CHARS_PATTERN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+LIST_PREFIX_PATTERN = re.compile(r"^\s*(?:[-*]|\d+[.)]|[①-⑳])\s*")
+BRACKET_HEADING_PATTERN = re.compile(r"^\[(.+?)\]$")
+COLON_HEADING_PATTERN = re.compile(r"^([^:\n]{1,60}?):$")
+PURE_HTML_LINE_PATTERN = re.compile(r"^</?[A-Za-z][^>]*>$")
+PURE_TEMPLATE_LINE_PATTERN = re.compile(r"^(?:<!--.*-->|[\{\}:/@?!=.\sA-Za-z0-9_\-\"'>]+)$")
+CSS_SELECTOR_LINE_PATTERN = re.compile(r"^[.#][A-Za-z0-9_\-:#.\s>\[\]=,'\"()/*+~]+(?:\{|;)?$")
+PATH_LIKE_PATTERN = re.compile(r"(?<![`\\w])(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+")
 
 CHANNELTALK_ARTICLE_IMPORT_DOCS_URL = (
     "https://docs.channel.io/help/en/articles/Create-an-Article-be177b0b"
@@ -72,10 +79,10 @@ def parse_transformed_text(value: str) -> tuple[str, str]:
 def sanitize_file_name_component(value: str, max_length: int = 80) -> str:
     sanitized = INVALID_FILENAME_CHARS_PATTERN.sub(" ", value)
     sanitized = sanitized.replace("\n", " ")
-    sanitized = re.sub(r"\s+", "-", sanitized).strip(" .-_")
+    sanitized = re.sub(r"\s+", " ", sanitized).strip(" .")
     if not sanitized:
         sanitized = "article"
-    return sanitized[:max_length].rstrip(" .-_") or "article"
+    return sanitized[:max_length].rstrip(" .") or "article"
 
 
 def is_template_like_line(stripped: str) -> bool:
@@ -85,21 +92,43 @@ def is_template_like_line(stripped: str) -> bool:
     )
 
 
+def prose_without_inline_codeish_fragments(stripped: str) -> str:
+    text = INLINE_TAG_PATTERN.sub(" ", stripped)
+    text = INLINE_TEMPLATE_PATTERN.sub(" ", text)
+    text = text.replace("`", " ")
+    text = LIST_PREFIX_PATTERN.sub("", text)
+    text = re.sub(r"[~<>{}=/\\|_*#;,+\[\]\"']", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def has_prose_context(stripped: str) -> bool:
+    text = prose_without_inline_codeish_fragments(stripped)
+    return bool(re.search(r"[가-힣]", text))
+
+
 def is_code_like_line(stripped: str) -> bool:
     if not stripped:
         return False
     if CODE_FENCE_LINE_PATTERN.match(stripped):
         return False
-    if stripped.startswith(("<!--", "<", "$(", "{", "function(", "});", "});", "}")):
+    if stripped.startswith(("<!--", "<", "$(", "{", "function(", "});", "}", "</")):
         return True
-    if stripped.endswith(("{", "}", ";")):
+    if PURE_HTML_LINE_PATTERN.match(stripped):
         return True
+    if stripped.endswith(("{", "}", ";")) and not has_prose_context(stripped):
+        return True
+    if CSS_SELECTOR_LINE_PATTERN.match(stripped):
+        return True
+    if is_template_like_line(stripped):
+        return not has_prose_context(stripped)
+    if has_prose_context(stripped):
+        return False
     if any(
         token in stripped
         for token in (
             "</",
             "/>",
-            "<!--",
             "class=",
             "style=",
             "href=",
@@ -108,14 +137,14 @@ def is_code_like_line(stripped: str) -> bool:
             "onclick=",
             "$(",
             "function(",
+            "{=",
+            "{?",
+            "{/",
+            "<!--{",
         )
     ):
         return True
-    if is_template_like_line(stripped):
-        return True
-    if re.match(r"^[.#][^ ]+\s*\{?$", stripped):
-        return True
-    if re.match(r"^[.#][^ ].*\{", stripped):
+    if PURE_TEMPLATE_LINE_PATTERN.match(stripped) and any(char in stripped for char in "<>{}=/"):
         return True
     return False
 
@@ -145,6 +174,7 @@ def wrap_inline_codeish_fragments(line: str) -> str:
 
     line = INLINE_TAG_PATTERN.sub(lambda match: f"`{match.group(0)}`", line)
     line = INLINE_TEMPLATE_PATTERN.sub(lambda match: f"`{match.group(0)}`", line)
+    line = PATH_LIKE_PATTERN.sub(lambda match: f"`{match.group(0)}`", line)
     return line
 
 
@@ -162,10 +192,33 @@ def flush_code_block(buffer: list[str], output_lines: list[str]) -> None:
     language = guess_code_language(buffer)
     fence = f"{indent_prefix}```{language}".rstrip()
 
+    if output_lines and output_lines[-1] != "":
+        output_lines.append("")
     output_lines.append(fence)
     output_lines.extend(buffer)
     output_lines.append(f"{indent_prefix}```")
+    output_lines.append("")
     buffer.clear()
+
+
+def maybe_promote_heading(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped:
+        return None
+    if LIST_PREFIX_PATTERN.match(stripped):
+        return None
+
+    bracket_match = BRACKET_HEADING_PATTERN.match(stripped)
+    if bracket_match:
+        return f"## {bracket_match.group(1).strip()}"
+
+    colon_match = COLON_HEADING_PATTERN.match(stripped)
+    if colon_match:
+        title = colon_match.group(1).strip()
+        if title and len(title) <= 40 and not is_code_like_line(title):
+            return f"## {title}"
+
+    return None
 
 
 def convert_answer_to_markdown(answer: str) -> str:
@@ -189,6 +242,15 @@ def convert_answer_to_markdown(answer: str) -> str:
             output_lines.append(line.rstrip())
             continue
 
+        promoted_heading = maybe_promote_heading(line)
+        if promoted_heading is not None:
+            flush_code_block(code_buffer, output_lines)
+            if output_lines and output_lines[-1] != "":
+                output_lines.append("")
+            output_lines.append(promoted_heading)
+            output_lines.append("")
+            continue
+
         if is_code_like_line(stripped):
             code_buffer.append(line.rstrip())
             continue
@@ -204,7 +266,16 @@ def convert_answer_to_markdown(answer: str) -> str:
 
 
 def build_markdown_document(question: str, markdown_body: str) -> str:
-    return f"# {question}\n\n{markdown_body}\n"
+    return f"{markdown_body}\n"
+
+
+def build_unique_file_name(question: str, used_file_names: dict[str, int]) -> str:
+    base_name = sanitize_file_name_component(question, max_length=120)
+    occurrence = used_file_names.get(base_name, 0) + 1
+    used_file_names[base_name] = occurrence
+    if occurrence == 1:
+        return f"{base_name}.md"
+    return f"{base_name} ({occurrence}).md"
 
 
 def export_articles(
@@ -219,6 +290,7 @@ def export_articles(
     articles: list[MarkdownArticle] = []
     oversized_files: list[str] = []
     max_generated_file_size = 0
+    used_file_names: dict[str, int] = {}
 
     with input_csv.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -233,10 +305,7 @@ def export_articles(
             batch_dir = output_dir / batch_name
             batch_dir.mkdir(parents=True, exist_ok=True)
 
-            file_name = (
-                f"{article_index:04d}__{row.get('source_id', '').strip() or 'noid'}__"
-                f"{sanitize_file_name_component(question)}.md"
-            )
+            file_name = build_unique_file_name(question, used_file_names)
             file_path = batch_dir / file_name
             file_path.write_text(markdown_document, encoding="utf-8")
 
