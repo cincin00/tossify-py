@@ -150,6 +150,48 @@ class FaqTransformed:
     prompt_instruction: str
 
 
+def shorten_for_progress(text: str, max_length: int = 42) -> str:
+    """진행 로그에 넣기 좋게 제목/질문을 한 줄 짧은 문자열로 만든다."""
+
+    compact = re.sub(r"\s+", " ", str(text or "")).strip()
+    if len(compact) <= max_length:
+        return compact
+    return f"{compact[:max_length - 3].rstrip()}..."
+
+
+def format_progress_seconds(seconds: float) -> str:
+    """초 단위 시간을 사람이 읽기 쉬운 진행 로그 형식으로 바꾼다."""
+
+    total_seconds = max(0, int(round(seconds)))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours > 0:
+        return f"{hours}h {minutes:02d}m {secs:02d}s"
+    if minutes > 0:
+        return f"{minutes}m {secs:02d}s"
+    return f"{secs}s"
+
+
+def render_progress_bar(current: int, total: int, width: int = 20) -> str:
+    """현재 진행 비율을 고정 폭 텍스트 막대로 렌더링한다."""
+
+    if total <= 0:
+        return f"[{'-' * width}]"
+    safe_current = max(0, min(current, total))
+    filled = int((safe_current / total) * width)
+    return f"[{'#' * filled}{'-' * (width - filled)}]"
+
+
+def describe_transform_item(item: FaqItem) -> str:
+    """진행 로그에서 현재 항목을 식별하기 위한 짧은 설명을 만든다."""
+
+    label = item.title or item.question or item.source_id or "제목 없음"
+    return (
+        f"source_id={item.source_id or '-'} "
+        f"title={shorten_for_progress(label)}"
+    )
+
+
 class OpenAIRequestError(RuntimeError):
     """OpenAI 호출 실패 사유를 상위 흐름으로 전달하는 예외다."""
 
@@ -1218,6 +1260,7 @@ def transform_with_openai(
     read_timeout_sec: float,
     max_retries: int,
     progress_step: int,
+    progress_detail: bool,
 ) -> list[FaqTransformed]:
     """원본 FAQ 목록 전체를 순회하며 OpenAI 문체 변환 결과를 만든다.
 
@@ -1241,6 +1284,7 @@ def transform_with_openai(
         read_timeout_sec: 응답 읽기 타임아웃(초)이다.
         max_retries: 재시도 횟수다.
         progress_step: 몇 건마다 진행률을 출력할지 나타낸다. 0이면 출력하지 않는다.
+        progress_detail: 각 항목의 시작/완료/소요 시간을 함께 출력할지 여부다.
 
     Returns:
         저장 가능한 `FaqTransformed` 목록이다.
@@ -1253,6 +1297,8 @@ def transform_with_openai(
     generated_insufficient_count = 0
     resumed_count = 0
     last_saved_count = 0
+    processed_item_count = 0
+    processed_duration_total_sec = 0.0
 
     checkpoint = None
     if resume_transform:
@@ -1326,6 +1372,13 @@ def transform_with_openai(
                     )
                 continue
 
+            item_started_at = time.perf_counter()
+            if progress_detail:
+                print(
+                    f"[B][{index}/{total}] {render_progress_bar(index - 1, total)} "
+                    f"시작 | {describe_transform_item(item)}"
+                )
+
             if not item.answer.strip():
                 payload = build_insufficient_payload(item, reason="answer_empty")
             else:
@@ -1358,6 +1411,25 @@ def transform_with_openai(
                 generated_ok_count += 1
             else:
                 generated_insufficient_count += 1
+
+            item_elapsed_sec = time.perf_counter() - item_started_at
+            processed_item_count += 1
+            processed_duration_total_sec += item_elapsed_sec
+
+            if progress_detail:
+                average_sec = processed_duration_total_sec / processed_item_count
+                remaining_count = max(0, total - len(completed_by_key))
+                eta_sec = average_sec * remaining_count
+                status = str(payload.get("status") or "unknown")
+                reason = str(payload.get("reason") or "").strip()
+                status_label = status if not reason else f"{status}({reason})"
+                print(
+                    f"[B][{index}/{total}] {render_progress_bar(index, total)} "
+                    f"완료 | {describe_transform_item(item)} | status={status_label} "
+                    f"| item={format_progress_seconds(item_elapsed_sec)} "
+                    f"avg={format_progress_seconds(average_sec)} "
+                    f"eta={format_progress_seconds(eta_sec)}"
+                )
 
             if progress_step > 0 and (index % progress_step == 0 or index == total):
                 print(
@@ -1549,6 +1621,11 @@ def parse_args() -> argparse.Namespace:
         help="진행률 출력 간격. 0이면 출력하지 않음",
     )
     parser.add_argument(
+        "--openai-progress-detail",
+        action="store_true",
+        help="변환 시 각 항목의 시작/완료/소요 시간까지 함께 출력",
+    )
+    parser.add_argument(
         "--transform-save-every",
         type=int,
         default=10,
@@ -1699,6 +1776,7 @@ def main() -> None:
         read_timeout_sec=args.openai_read_timeout_sec,
         max_retries=args.openai_max_retries,
         progress_step=args.openai_progress_step,
+        progress_detail=args.openai_progress_detail,
     )
     save_b_to_csv(args.b_csv, faq_b)
     save_b_to_sqlite(args.b_db, faq_b)

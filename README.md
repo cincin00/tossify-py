@@ -151,7 +151,8 @@ python scraping.py \
   --openai-connect-timeout-sec 8 \
   --openai-read-timeout-sec 25 \
   --openai-max-retries 2 \
-  --openai-progress-step 50
+  --openai-progress-step 50 \
+  --openai-progress-detail
 ```
 
 체크포인트를 명시적으로 지정해 변환 재개 가능하게 실행:
@@ -191,6 +192,7 @@ python scraping.py --help
 | `--openai-read-timeout-sec` | `25.0` | OpenAI 응답 읽기 타임아웃(초)입니다. |
 | `--openai-max-retries` | `2` | OpenAI 호출 실패 시 재시도 횟수입니다. |
 | `--openai-progress-step` | `50` | 몇 건마다 진행률을 출력할지 정합니다. `0`이면 진행률을 출력하지 않습니다. |
+| `--openai-progress-detail` | 꺼짐 | 각 항목의 시작/완료 시점, 소요 시간, 평균 시간, 예상 남은 시간을 함께 출력합니다. |
 | `--transform-save-every` | `10` | 변환 결과를 몇 건마다 `faq_b.csv`, DB, 체크포인트 파일로 중간 저장할지 정합니다. |
 | `--transform-checkpoint` | `b-csv + .checkpoint.json` | 변환 재개용 체크포인트 파일 경로입니다. 비우면 `faq_b.csv.checkpoint.json`처럼 자동 생성합니다. |
 | `--resume-transform` / `--no-resume-transform` | `resume-transform` | 체크포인트가 있을 때 이어서 변환할지 정합니다. 기본값은 재개 사용입니다. |
