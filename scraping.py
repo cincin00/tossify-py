@@ -1,12 +1,13 @@
 import argparse
 import csv
+import hashlib
 import json
 import os
 import re
 import sqlite3
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from html import unescape
 from typing import Any
 from urllib.error import URLError
@@ -19,6 +20,8 @@ import requests
 DEFAULT_BASE_URL = "https://www.firstmall.kr/customer/faq/search"
 DEFAULT_DETAIL_URL_TEMPLATE = "https://www.firstmall.kr/customer/faq/{source_id}"
 DEFAULT_OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+DEFAULT_DOTENV_PATH = ".env"
+CHECKPOINT_VERSION = 1
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 A_CSV_FIELDS = [
     "source_id",
@@ -151,6 +154,47 @@ class OpenAIRequestError(RuntimeError):
 
         super().__init__(reason)
         self.reason = reason
+
+
+def load_dotenv_file(path: str, override: bool = False) -> bool:
+    """`.env` 파일을 읽어 환경변수로 반영한다.
+
+    외부 의존성을 추가하지 않기 위해 가장 흔한 `.env` 형식만 지원한다.
+    빈 줄과 `#` 주석은 무시하고, `export KEY=value` 형태도 허용한다.
+
+    Args:
+        path: 읽을 `.env` 파일 경로다.
+        override: 이미 존재하는 환경변수를 덮어쓸지 여부다.
+
+    Returns:
+        파일을 읽었다면 `True`, 파일이 없으면 `False`다.
+    """
+
+    if not os.path.exists(path):
+        return False
+
+    with open(path, encoding="utf-8") as fp:
+        for line in fp:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.startswith("export "):
+                stripped = stripped[len("export "):].strip()
+            if "=" not in stripped:
+                continue
+
+            key, value = stripped.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if not key:
+                continue
+            if value[:1] == value[-1:] and value[:1] in {"'", '"'}:
+                value = value[1:-1]
+            if not override and key in os.environ:
+                continue
+            os.environ[key] = value
+
+    return True
 
 
 def build_headers(user_agent: str) -> dict[str, str]:
@@ -612,7 +656,7 @@ def save_a_to_sqlite(path: str, items: list[FaqItem]) -> None:
             """
         )
         conn.execute("DELETE FROM faq_a")
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
         conn.executemany(
             """
             INSERT INTO faq_a (
@@ -638,6 +682,271 @@ def save_a_to_sqlite(path: str, items: list[FaqItem]) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def load_a_from_csv(path: str) -> list[FaqItem]:
+    """저장된 원본 FAQ(A) CSV를 다시 읽어 `FaqItem` 목록으로 복원한다.
+
+    변환만 다시 수행할 때 네트워크 수집 없이 기존 CSV를 재사용할 수 있게 한다.
+
+    Args:
+        path: 읽어올 원본 FAQ CSV 경로다.
+
+    Returns:
+        CSV에서 복원한 `FaqItem` 목록이다.
+
+    Raises:
+        FileNotFoundError: 대상 CSV가 없을 때 발생한다.
+        ValueError: 필수 컬럼이 누락된 CSV를 읽었을 때 발생한다.
+    """
+
+    if not os.path.exists(path):
+        raise FileNotFoundError(path)
+
+    with open(path, newline="", encoding="utf-8-sig") as fp:
+        reader = csv.DictReader(fp)
+        fieldnames = reader.fieldnames or []
+        missing_fields = [field for field in A_CSV_FIELDS if field not in fieldnames]
+        if missing_fields:
+            missing_text = ", ".join(missing_fields)
+            raise ValueError(f"필수 컬럼이 누락되었습니다: {missing_text}")
+
+        items: list[FaqItem] = []
+        for row in reader:
+            items.append(
+                FaqItem(
+                    source_id=str(row.get("source_id") or ""),
+                    category=str(row.get("category") or ""),
+                    title=str(row.get("title") or ""),
+                    question=str(row.get("question") or ""),
+                    answer=str(row.get("answer") or ""),
+                    created_at=str(row.get("created_at") or ""),
+                    updated_at=str(row.get("updated_at") or ""),
+                    raw_json=str(row.get("raw_json") or ""),
+                )
+            )
+    return items
+
+
+def load_b_from_csv(path: str) -> list[FaqTransformed]:
+    """저장된 변환 FAQ(B) CSV를 다시 읽어 `FaqTransformed` 목록으로 복원한다.
+
+    배치 저장 후 재시작할 때 기존 변환 결과를 다시 불러와 이어서 처리하는 데 쓴다.
+
+    Args:
+        path: 읽어올 변환 FAQ CSV 경로다.
+
+    Returns:
+        CSV에서 복원한 `FaqTransformed` 목록이다.
+
+    Raises:
+        FileNotFoundError: 대상 CSV가 없을 때 발생한다.
+        ValueError: 필수 컬럼이 누락된 CSV를 읽었을 때 발생한다.
+    """
+
+    if not os.path.exists(path):
+        raise FileNotFoundError(path)
+
+    with open(path, newline="", encoding="utf-8-sig") as fp:
+        reader = csv.DictReader(fp)
+        fieldnames = reader.fieldnames or []
+        missing_fields = [field for field in B_CSV_FIELDS if field not in fieldnames]
+        if missing_fields:
+            missing_text = ", ".join(missing_fields)
+            raise ValueError(f"필수 컬럼이 누락되었습니다: {missing_text}")
+
+        items: list[FaqTransformed] = []
+        for row in reader:
+            items.append(
+                FaqTransformed(
+                    source_id=str(row.get("source_id") or ""),
+                    original_title=str(row.get("original_title") or ""),
+                    original_question=str(row.get("original_question") or ""),
+                    original_answer=str(row.get("original_answer") or ""),
+                    transformed_text=str(row.get("transformed_text") or ""),
+                    model=str(row.get("model") or ""),
+                    prompt_instruction=str(row.get("prompt_instruction") or ""),
+                )
+            )
+    return items
+
+
+def sha256_text(text: str) -> str:
+    """문자열의 SHA-256 해시를 계산한다."""
+
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def sha256_file(path: str) -> str:
+    """파일의 SHA-256 해시를 계산한다."""
+
+    hasher = hashlib.sha256()
+    with open(path, "rb") as fp:
+        while True:
+            chunk = fp.read(1024 * 1024)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def build_transform_resume_key(item: FaqItem, index: int) -> str:
+    """변환 재개용 안정 키를 만든다.
+
+    `source_id`가 있으면 이를 우선 사용하고, 없으면 현재 A CSV의 행 순서를
+    기반으로 대체 키를 만든다.
+    """
+
+    if item.source_id:
+        return f"source_id:{item.source_id}"
+    return f"row:{index}"
+
+
+def build_transform_checkpoint_path(b_csv_path: str) -> str:
+    """변환 체크포인트 파일의 기본 경로를 반환한다."""
+
+    return f"{b_csv_path}.checkpoint.json"
+
+
+def load_transform_checkpoint(path: str) -> dict[str, Any] | None:
+    """변환 체크포인트 JSON을 읽는다."""
+
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as fp:
+        payload = json.load(fp)
+    if not isinstance(payload, dict):
+        raise ValueError("체크포인트 형식이 올바르지 않습니다.")
+    return payload
+
+
+def save_transform_checkpoint(
+    path: str,
+    a_csv_path: str,
+    b_csv_path: str,
+    a_csv_sha256: str,
+    model: str,
+    instruction: str,
+    total_items: int,
+    completed_keys_in_order: list[str],
+) -> None:
+    """현재 변환 진행 상태를 체크포인트 JSON으로 저장한다."""
+
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    payload = {
+        "version": CHECKPOINT_VERSION,
+        "a_csv_path": os.path.abspath(a_csv_path),
+        "b_csv_path": os.path.abspath(b_csv_path),
+        "a_csv_sha256": a_csv_sha256,
+        "model": model,
+        "instruction_sha256": sha256_text(instruction),
+        "total_items": total_items,
+        "completed_count": len(completed_keys_in_order),
+        "completed_keys_in_order": completed_keys_in_order,
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+    with open(path, "w", encoding="utf-8") as fp:
+        json.dump(payload, fp, ensure_ascii=False, indent=2)
+
+
+def remove_transform_checkpoint(path: str) -> None:
+    """변환 완료 후 체크포인트 파일을 삭제한다."""
+
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def validate_transform_checkpoint(
+    checkpoint: dict[str, Any],
+    checkpoint_path: str,
+    a_csv_path: str,
+    b_csv_path: str,
+    a_csv_sha256: str,
+    model: str,
+    instruction: str,
+    total_items: int,
+) -> str | None:
+    """현재 실행 조건과 체크포인트가 호환되는지 검사한다.
+
+    Returns:
+        호환되면 `None`, 아니면 사람이 읽을 수 있는 불일치 사유 문자열이다.
+    """
+
+    if int(checkpoint.get("version") or -1) != CHECKPOINT_VERSION:
+        return "체크포인트 버전이 다릅니다."
+    if checkpoint.get("a_csv_path") != os.path.abspath(a_csv_path):
+        return "원본 FAQ CSV 경로가 다릅니다."
+    if checkpoint.get("b_csv_path") != os.path.abspath(b_csv_path):
+        return "변환 FAQ CSV 경로가 다릅니다."
+    if checkpoint.get("a_csv_sha256") != a_csv_sha256:
+        return "원본 FAQ CSV 내용이 바뀌었습니다."
+    if checkpoint.get("model") != model:
+        return "OpenAI 모델 설정이 다릅니다."
+    if checkpoint.get("instruction_sha256") != sha256_text(instruction):
+        return "문체 지시문이 바뀌었습니다."
+    if int(checkpoint.get("total_items") or -1) != total_items:
+        return "원본 FAQ 건수가 다릅니다."
+    completed_keys = checkpoint.get("completed_keys_in_order")
+    if not isinstance(completed_keys, list):
+        return f"체크포인트 파일 형식이 올바르지 않습니다: {checkpoint_path}"
+    return None
+
+
+def build_completed_transforms_in_order(
+    items: list[FaqItem],
+    completed_by_key: dict[str, FaqTransformed],
+) -> tuple[list[str], list[FaqTransformed]]:
+    """원본 FAQ 순서에 맞춰 현재까지 완료된 변환 결과를 정렬한다."""
+
+    ordered_keys: list[str] = []
+    ordered_items: list[FaqTransformed] = []
+    for index, item in enumerate(items, start=1):
+        key = build_transform_resume_key(item, index)
+        transformed = completed_by_key.get(key)
+        if transformed is None:
+            continue
+        ordered_keys.append(key)
+        ordered_items.append(transformed)
+    return ordered_keys, ordered_items
+
+
+def persist_transform_progress(
+    items: list[FaqItem],
+    completed_by_key: dict[str, FaqTransformed],
+    a_csv_path: str,
+    b_csv_path: str,
+    b_db_path: str,
+    checkpoint_path: str,
+    a_csv_sha256: str,
+    model: str,
+    instruction: str,
+    total_items: int,
+) -> int:
+    """현재까지 완료된 변환 결과와 체크포인트를 함께 저장한다."""
+
+    completed_keys_in_order, completed_items = build_completed_transforms_in_order(
+        items, completed_by_key
+    )
+    if not completed_items:
+        return 0
+
+    save_b_to_csv(b_csv_path, completed_items)
+    save_b_to_sqlite(b_db_path, completed_items)
+    save_transform_checkpoint(
+        path=checkpoint_path,
+        a_csv_path=a_csv_path,
+        b_csv_path=b_csv_path,
+        a_csv_sha256=a_csv_sha256,
+        model=model,
+        instruction=instruction,
+        total_items=total_items,
+        completed_keys_in_order=completed_keys_in_order,
+    )
+    print(
+        f"[B] 중간 저장: {len(completed_items)}/{total_items}건 "
+        f"(csv={b_csv_path}, checkpoint={checkpoint_path})"
+    )
+    return len(completed_items)
 
 
 def build_transform_prompt(item: FaqItem) -> str:
@@ -889,6 +1198,12 @@ def transform_with_openai(
     api_key: str,
     model: str,
     instruction: str,
+    a_csv_path: str,
+    b_csv_path: str,
+    b_db_path: str,
+    checkpoint_path: str,
+    save_every: int,
+    resume_transform: bool,
     request_interval_sec: float,
     connect_timeout_sec: float,
     read_timeout_sec: float,
@@ -906,6 +1221,12 @@ def transform_with_openai(
         api_key: OpenAI API 키다.
         model: 사용할 모델명이다.
         instruction: 시스템 지시어다.
+        a_csv_path: 원본 FAQ CSV 경로다.
+        b_csv_path: 변환 FAQ CSV 저장 경로다.
+        b_db_path: 변환 FAQ DB 저장 경로다.
+        checkpoint_path: 배치 저장 시 사용할 체크포인트 경로다.
+        save_every: 몇 건마다 중간 저장할지 나타낸다.
+        resume_transform: 체크포인트가 있으면 이어서 수행할지 여부다.
         request_interval_sec: 각 API 호출 사이 대기 시간(초)이다.
         connect_timeout_sec: 연결 타임아웃(초)이다.
         read_timeout_sec: 응답 읽기 타임아웃(초)이다.
@@ -916,56 +1237,138 @@ def transform_with_openai(
         저장 가능한 `FaqTransformed` 목록이다.
     """
 
-    transformed: list[FaqTransformed] = []
     total = len(items)
-    ok_count = 0
-    insufficient_count = 0
+    a_csv_sha256 = sha256_file(a_csv_path)
+    completed_by_key: dict[str, FaqTransformed] = {}
+    generated_ok_count = 0
+    generated_insufficient_count = 0
+    resumed_count = 0
+    last_saved_count = 0
 
-    for index, item in enumerate(items, start=1):
-        if not item.answer.strip():
-            payload = build_insufficient_payload(item, reason="answer_empty")
-        else:
-            prompt = build_transform_prompt(item)
+    checkpoint = None
+    if resume_transform:
+        try:
+            checkpoint = load_transform_checkpoint(checkpoint_path)
+        except ValueError as exc:
+            print(f"[B][WARN] 체크포인트를 읽지 못해 새로 시작합니다: {exc}")
+
+    if checkpoint is not None:
+        reason = validate_transform_checkpoint(
+            checkpoint=checkpoint,
+            checkpoint_path=checkpoint_path,
+            a_csv_path=a_csv_path,
+            b_csv_path=b_csv_path,
+            a_csv_sha256=a_csv_sha256,
+            model=model,
+            instruction=instruction,
+            total_items=total,
+        )
+        if reason is None:
             try:
-                raw_text = request_openai_json_response(
-                    api_key=api_key,
-                    model=model,
-                    instruction=instruction,
-                    prompt=prompt,
-                    connect_timeout_sec=connect_timeout_sec,
-                    read_timeout_sec=read_timeout_sec,
-                    max_retries=max_retries,
-                )
-                payload = parse_transform_response(raw_text, item)
-            except OpenAIRequestError as exc:
-                payload = build_insufficient_payload(item, reason=exc.reason)
-            except ValueError:
-                payload = build_insufficient_payload(
-                    item, reason="invalid_response_format")
+                partial_items = load_b_from_csv(b_csv_path)
+            except (FileNotFoundError, ValueError) as exc:
+                print(f"[B][WARN] 기존 변환 CSV를 읽지 못해 새로 시작합니다: {exc}")
+            else:
+                completed_keys_in_order = checkpoint["completed_keys_in_order"]
+                if len(completed_keys_in_order) != len(partial_items):
+                    print("[B][WARN] 체크포인트와 기존 변환 CSV의 건수가 달라 새로 시작합니다.")
+                else:
+                    completed_by_key = dict(zip(completed_keys_in_order, partial_items))
+                    resumed_count = len(completed_by_key)
+                    last_saved_count = len(completed_by_key)
+                    print(f"[B] 체크포인트 복구: {resumed_count}/{total}건")
+        else:
+            print(f"[B][WARN] 기존 체크포인트를 무시하고 새로 시작합니다: {reason}")
+    elif not resume_transform and os.path.exists(checkpoint_path):
+        print("[B] resume 옵션이 꺼져 있어 기존 체크포인트를 사용하지 않습니다.")
 
-        transformed.append(
-            build_transformed_item(
+    def save_progress_if_needed(force: bool = False) -> None:
+        nonlocal last_saved_count
+        completed_count = len(completed_by_key)
+        if completed_count == 0:
+            return
+        if force and completed_count == last_saved_count:
+            return
+        if not force and completed_count - last_saved_count < save_every:
+            return
+        last_saved_count = persist_transform_progress(
+            items=items,
+            completed_by_key=completed_by_key,
+            a_csv_path=a_csv_path,
+            b_csv_path=b_csv_path,
+            b_db_path=b_db_path,
+            checkpoint_path=checkpoint_path,
+            a_csv_sha256=a_csv_sha256,
+            model=model,
+            instruction=instruction,
+            total_items=total,
+        )
+
+    try:
+        for index, item in enumerate(items, start=1):
+            key = build_transform_resume_key(item, index)
+            if key in completed_by_key:
+                if progress_step > 0 and (index % progress_step == 0 or index == total):
+                    print(
+                        f"[B] progress {index}/{total} | completed={len(completed_by_key)} "
+                        f"generated_ok={generated_ok_count} "
+                        f"generated_insufficient={generated_insufficient_count} "
+                        f"resumed={resumed_count}"
+                    )
+                continue
+
+            if not item.answer.strip():
+                payload = build_insufficient_payload(item, reason="answer_empty")
+            else:
+                prompt = build_transform_prompt(item)
+                try:
+                    raw_text = request_openai_json_response(
+                        api_key=api_key,
+                        model=model,
+                        instruction=instruction,
+                        prompt=prompt,
+                        connect_timeout_sec=connect_timeout_sec,
+                        read_timeout_sec=read_timeout_sec,
+                        max_retries=max_retries,
+                    )
+                    payload = parse_transform_response(raw_text, item)
+                except OpenAIRequestError as exc:
+                    payload = build_insufficient_payload(item, reason=exc.reason)
+                except ValueError:
+                    payload = build_insufficient_payload(
+                        item, reason="invalid_response_format")
+
+            completed_by_key[key] = build_transformed_item(
                 item=item,
                 payload=payload,
                 model=model,
                 instruction=instruction,
             )
-        )
 
-        if payload.get("status") == "ok":
-            ok_count += 1
-        else:
-            insufficient_count += 1
+            if payload.get("status") == "ok":
+                generated_ok_count += 1
+            else:
+                generated_insufficient_count += 1
 
-        if progress_step > 0 and (index % progress_step == 0 or index == total):
-            print(
-                f"[B] progress {index}/{total} | ok={ok_count} "
-                f"insufficient={insufficient_count}"
-            )
+            if progress_step > 0 and (index % progress_step == 0 or index == total):
+                print(
+                    f"[B] progress {index}/{total} | completed={len(completed_by_key)} "
+                    f"generated_ok={generated_ok_count} "
+                    f"generated_insufficient={generated_insufficient_count} "
+                    f"resumed={resumed_count}"
+                )
 
-        if request_interval_sec > 0:
-            time.sleep(request_interval_sec)
+            save_progress_if_needed()
 
+            if request_interval_sec > 0:
+                time.sleep(request_interval_sec)
+    except BaseException:
+        save_progress_if_needed(force=True)
+        raise
+
+    save_progress_if_needed(force=True)
+    remove_transform_checkpoint(checkpoint_path)
+    _, transformed = build_completed_transforms_in_order(items, completed_by_key)
     return transformed
 
 
@@ -1014,7 +1417,7 @@ def save_b_to_sqlite(path: str, items: list[FaqTransformed]) -> None:
             """
         )
         conn.execute("DELETE FROM faq_b")
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
         conn.executemany(
             """
             INSERT INTO faq_b (
@@ -1053,17 +1456,36 @@ def parse_args() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(
         description="Firstmall FAQ 수집 + OpenAI Toss체 변환 파이프라인")
+    parser.add_argument(
+        "--mode",
+        choices=["all", "collect", "transform"],
+        default="all",
+        help=(
+            "실행 모드. all=수집 후 변환, "
+            "collect=수집/저장만, transform=기존 A CSV로 변환만"
+        ),
+    )
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
-    parser.add_argument("--detail-url-template", default=DEFAULT_DETAIL_URL_TEMPLATE)
+    parser.add_argument(
+        "--detail-url-template",
+        default=DEFAULT_DETAIL_URL_TEMPLATE,
+        help="상세 FAQ 페이지 주소 템플릿",
+    )
     parser.add_argument("--per-page", type=int, default=100)
     parser.add_argument("--max-pages", type=int, default=None)
     parser.add_argument("--timeout", type=int, default=20)
     parser.add_argument(
         "--user-agent",
-        default="Mozilla/5.0 (compatible; tossify-py/1.0)")
+        default="Mozilla/5.0 (compatible; tossify-py/1.0)",
+        help="퍼스트몰 요청 시 사용할 User-Agent",
+    )
     parser.add_argument("--sleep-sec", type=float, default=0.0)
 
-    parser.add_argument("--a-csv", default="data/faq_a.csv")
+    parser.add_argument(
+        "--a-csv",
+        default="data/faq_a.csv",
+        help="원본 FAQ(A) CSV 경로. transform 모드에서는 입력 파일로도 사용",
+    )
     parser.add_argument("--a-db", default="data/faq.db")
 
     parser.add_argument(
@@ -1071,46 +1493,80 @@ def parse_args() -> argparse.Namespace:
         "--gemini-api-key",
         dest="openai_api_key",
         default=os.getenv("OPENAI_API_KEY", ""),
+        help="OpenAI API 키. 미지정 시 환경변수 또는 .env의 OPENAI_API_KEY 사용",
     )
     parser.add_argument(
         "--openai-model",
         "--gemini-model",
         dest="openai_model",
         default="gpt-4o-mini",
+        help="FAQ 문체 변환에 사용할 모델명",
     )
     parser.add_argument(
         "--style-instruction",
-        default=DEFAULT_STYLE_INSTRUCTION)
+        default=DEFAULT_STYLE_INSTRUCTION,
+        help="변환용 시스템 지시문",
+    )
     parser.add_argument(
         "--openai-interval-sec",
         "--gemini-interval-sec",
         dest="openai_interval_sec",
         type=float,
         default=0.0,
+        help="OpenAI 요청 사이 대기 시간(초)",
     )
     parser.add_argument(
         "--openai-connect-timeout-sec",
         type=float,
         default=8.0,
+        help="OpenAI 연결 타임아웃(초)",
     )
     parser.add_argument(
         "--openai-read-timeout-sec",
         type=float,
         default=25.0,
+        help="OpenAI 응답 읽기 타임아웃(초)",
     )
     parser.add_argument(
         "--openai-max-retries",
         type=int,
         default=2,
+        help="OpenAI 호출 재시도 횟수",
     )
     parser.add_argument(
         "--openai-progress-step",
         type=int,
         default=50,
+        help="진행률 출력 간격. 0이면 출력하지 않음",
     )
-    parser.add_argument("--skip-transform", action="store_true")
+    parser.add_argument(
+        "--transform-save-every",
+        type=int,
+        default=10,
+        help="변환 결과를 몇 건마다 CSV/DB/체크포인트로 중간 저장할지 정함",
+    )
+    parser.add_argument(
+        "--transform-checkpoint",
+        default="",
+        help="변환 체크포인트 경로. 비우면 b-csv 경로 기준으로 자동 생성",
+    )
+    parser.add_argument(
+        "--resume-transform",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="체크포인트가 있으면 이어서 변환할지 여부",
+    )
+    parser.add_argument(
+        "--skip-transform",
+        action="store_true",
+        help="하위 호환 옵션. 지정 시 collect 모드처럼 수집만 수행",
+    )
 
-    parser.add_argument("--b-csv", default="data/faq_b.csv")
+    parser.add_argument(
+        "--b-csv",
+        default="data/faq_b.csv",
+        help="변환 FAQ(B) CSV 저장 경로",
+    )
     parser.add_argument("--b-db", default="data/faq.db")
     return parser.parse_args()
 
@@ -1135,6 +1591,28 @@ def validate_transform_args(args: argparse.Namespace) -> None:
         raise ValueError("--openai-max-retries는 0 이상이어야 합니다.")
     if args.openai_progress_step < 0:
         raise ValueError("--openai-progress-step은 0 이상이어야 합니다.")
+    if args.transform_save_every <= 0:
+        raise ValueError("--transform-save-every는 0보다 커야 합니다.")
+    if args.mode == "transform" and args.skip_transform:
+        raise ValueError("--mode transform과 --skip-transform은 함께 사용할 수 없습니다.")
+
+
+def resolve_pipeline_mode(args: argparse.Namespace) -> str:
+    """CLI 인자에서 실제 실행 모드를 계산한다.
+
+    `--skip-transform`은 기존 사용자를 위한 하위 호환 옵션으로 유지하고,
+    내부에서는 `collect` 모드로 통일한다.
+
+    Args:
+        args: `parse_args`가 반환한 CLI 인자 객체다.
+
+    Returns:
+        `all`, `collect`, `transform` 중 하나의 실행 모드다.
+    """
+
+    if args.skip_transform:
+        return "collect"
+    return str(args.mode)
 
 
 def main() -> None:
@@ -1145,42 +1623,68 @@ def main() -> None:
     조치할 수 있도록 설명적인 예외 메시지로 바꿔 전달한다.
     """
 
+    load_dotenv_file(DEFAULT_DOTENV_PATH)
     args = parse_args()
     validate_transform_args(args)
+    mode = resolve_pipeline_mode(args)
 
-    try:
-        faq_a = collect_all_faq(
-            base_url=args.base_url,
-            detail_url_template=args.detail_url_template,
-            per_page=args.per_page,
-            max_pages=args.max_pages,
-            timeout=args.timeout,
-            user_agent=args.user_agent,
-            sleep_sec=args.sleep_sec,
-        )
-    except URLError as exc:
-        raise RuntimeError(
-            "Firstmall FAQ 수집 요청에 실패했습니다. 네트워크 정책 또는 대상 서버 차단(예: 403) 여부를 확인하세요."
-        ) from exc
-    save_a_to_csv(args.a_csv, faq_a)
-    save_a_to_sqlite(args.a_db, faq_a)
-    print(f"[A] 수집 완료: {len(faq_a)}건")
-    print(f"[A] CSV 저장: {args.a_csv}")
-    print(f"[A] DB 저장: {args.a_db} (table=faq_a)")
+    faq_a: list[FaqItem]
+    if mode in {"all", "collect"}:
+        try:
+            faq_a = collect_all_faq(
+                base_url=args.base_url,
+                detail_url_template=args.detail_url_template,
+                per_page=args.per_page,
+                max_pages=args.max_pages,
+                timeout=args.timeout,
+                user_agent=args.user_agent,
+                sleep_sec=args.sleep_sec,
+            )
+        except URLError as exc:
+            raise RuntimeError(
+                "Firstmall FAQ 수집 요청에 실패했습니다. 네트워크 정책 또는 대상 서버 차단(예: 403) 여부를 확인하세요."
+            ) from exc
+        save_a_to_csv(args.a_csv, faq_a)
+        save_a_to_sqlite(args.a_db, faq_a)
+        print(f"[A] 수집 완료: {len(faq_a)}건")
+        print(f"[A] CSV 저장: {args.a_csv}")
+        print(f"[A] DB 저장: {args.a_db} (table=faq_a)")
+    else:
+        try:
+            faq_a = load_a_from_csv(args.a_csv)
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                f"변환 전용 모드에서는 원본 FAQ CSV가 필요합니다: {args.a_csv}"
+            ) from exc
+        except ValueError as exc:
+            raise RuntimeError(
+                f"원본 FAQ CSV를 읽을 수 없습니다: {exc}"
+            ) from exc
+        print(f"[A] 기존 CSV 로드: {args.a_csv} ({len(faq_a)}건)")
 
-    if args.skip_transform:
-        print("[B] OpenAI 변환을 건너뜁니다 (--skip-transform)")
+    if mode == "collect":
+        print("[B] OpenAI 변환을 건너뜁니다 (mode=collect)")
         return
 
     if not args.openai_api_key:
         raise ValueError(
-            "OpenAI 변환을 수행하려면 --openai-api-key 또는 OPENAI_API_KEY가 필요합니다.")
+            "OpenAI 변환을 수행하려면 --openai-api-key, OPENAI_API_KEY, 또는 .env의 OPENAI_API_KEY가 필요합니다."
+        )
 
+    checkpoint_path = args.transform_checkpoint or build_transform_checkpoint_path(
+        args.b_csv
+    )
     faq_b = transform_with_openai(
         items=faq_a,
         api_key=args.openai_api_key,
         model=args.openai_model,
         instruction=args.style_instruction,
+        a_csv_path=args.a_csv,
+        b_csv_path=args.b_csv,
+        b_db_path=args.b_db,
+        checkpoint_path=checkpoint_path,
+        save_every=args.transform_save_every,
+        resume_transform=args.resume_transform,
         request_interval_sec=args.openai_interval_sec,
         connect_timeout_sec=args.openai_connect_timeout_sec,
         read_timeout_sec=args.openai_read_timeout_sec,

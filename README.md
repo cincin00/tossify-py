@@ -6,11 +6,11 @@
 
 ### 1) Python 설치
 
-Python `3.12+`를 권장합니다.
+Python `3.13+`를 권장합니다.
 
 - macOS (Homebrew)
 ```bash
-brew install python@3.12
+brew install python@3.13
 ```
 
 - Ubuntu/Debian
@@ -21,7 +21,7 @@ sudo apt install -y python3 python3-venv python3-pip
 
 - Windows (PowerShell)
 ```powershell
-winget install -e --id Python.Python.3.12
+winget install -e --id Python.Python.3.13
 ```
 
 버전 확인:
@@ -67,39 +67,15 @@ OPENAI_API_KEY=your_openai_api_key
 
 중요:
 
-- 이 프로젝트는 `.env` 파일을 자동으로 읽지 않습니다.
-- 실행 전에 `OPENAI_API_KEY`가 현재 셸 환경변수에 올라와 있어야 합니다.
-- `--openai-api-key`를 직접 넘기지 않으면 현재 셸의 `OPENAI_API_KEY` 값을 사용합니다.
-
-macOS / Linux에서 `.env`를 현재 셸에 반영하는 방법:
-
-```bash
-set -a
-source .env
-set +a
-```
-
-Windows PowerShell에서 직접 설정하는 방법:
-
-```powershell
-$env:OPENAI_API_KEY="your_openai_api_key"
-```
+- `scraping.py`는 현재 작업 디렉터리의 `.env`를 자동으로 읽습니다.
+- `.env`에 `OPENAI_API_KEY`가 있으면 별도 `source .env` 없이 그대로 실행할 수 있습니다.
+- `--openai-api-key`를 직접 넘기면 `.env`보다 CLI 인자가 우선합니다.
 
 ### 5) 가장 쉬운 실행 방법
 
-macOS / Linux:
+macOS / Linux / Windows PowerShell 공통:
 
 ```bash
-set -a
-source .env
-set +a
-python scraping.py
-```
-
-Windows PowerShell:
-
-```powershell
-$env:OPENAI_API_KEY="your_openai_api_key"
 python scraping.py
 ```
 
@@ -115,10 +91,12 @@ python scraping.py
 - `faq_a.csv`, `faq_b.csv`는 실행할 때마다 새 결과로 덮어씁니다.
 - 기존 파일 뒤에 내용을 추가하는 방식이 아니므로, 실행 자체 때문에 CSV 중복이 누적되지는 않습니다.
 - SQLite의 `faq_a`, `faq_b` 테이블도 기존 데이터를 비운 뒤 다시 저장합니다.
+- 변환 중에는 기본적으로 `data/faq_b.csv.checkpoint.json` 체크포인트 파일을 함께 사용합니다.
+- 변환이 길어지거나 중단되더라도, 다음 실행 시 체크포인트가 호환되면 이어서 재개합니다.
 
 ### 6) 자주 쓰는 실행 예시
 
-기본 실행 예시:
+기본 실행 예시(`--mode all`, 기본값):
 
 ```bash
 python scraping.py \
@@ -130,7 +108,7 @@ python scraping.py \
   --openai-api-key "$OPENAI_API_KEY"
 ```
 
-OpenAI 키를 환경변수로 이미 올려둔 상태라면 더 짧게 실행할 수 있습니다.
+`.env`를 사용 중이면 더 짧게 실행할 수 있습니다.
 
 ```bash
 python scraping.py
@@ -139,24 +117,50 @@ python scraping.py
 수집만 실행하고 변환은 생략:
 
 ```bash
-python scraping.py --skip-transform
+python scraping.py --mode collect
 ```
 
-빠르게 점검할 때는 일부 페이지만 먼저 실행할 수 있습니다.
+기존 `faq_a.csv`를 재사용해 변환만 다시 실행:
 
 ```bash
-python scraping.py --max-pages 1
+python scraping.py --mode transform
+```
+
+다른 원본 CSV를 입력으로 써서 변환만 실행:
+
+```bash
+python scraping.py \
+  --mode transform \
+  --a-csv data/faq_a.csv \
+  --b-csv data/faq_b.csv
+```
+
+빠르게 점검할 때는 일부 페이지만 먼저 수집할 수 있습니다.
+
+```bash
+python scraping.py --mode collect --max-pages 1
 ```
 
 변환 안정성 옵션 예시:
 
 ```bash
 python scraping.py \
+  --mode transform \
+  --transform-save-every 10 \
   --openai-api-key "$OPENAI_API_KEY" \
   --openai-connect-timeout-sec 8 \
   --openai-read-timeout-sec 25 \
   --openai-max-retries 2 \
   --openai-progress-step 50
+```
+
+체크포인트를 명시적으로 지정해 변환 재개 가능하게 실행:
+
+```bash
+python scraping.py \
+  --mode transform \
+  --transform-save-every 5 \
+  --transform-checkpoint data/faq_b.progress.json
 ```
 
 CLI 옵션 전체 목록이 필요하면 아래 명령으로 확인할 수 있습니다.
@@ -169,6 +173,7 @@ python scraping.py --help
 
 | 옵션 | 기본값 | 설명 |
 |---|---|---|
+| `--mode` | `all` | 실행 모드입니다. `all`은 수집 후 변환, `collect`는 수집만, `transform`은 저장된 `faq_a.csv`를 읽어 변환만 수행합니다. |
 | `--base-url` | `https://www.firstmall.kr/customer/faq/search` | FAQ 목록을 가져올 API 주소입니다. |
 | `--detail-url-template` | `https://www.firstmall.kr/customer/faq/{source_id}` | FAQ 상세 페이지 주소 템플릿입니다. `{source_id}` 자리에 FAQ 번호가 들어갑니다. |
 | `--per-page` | `100` | FAQ 목록 API를 한 번 호출할 때 가져올 건수입니다. |
@@ -176,9 +181,9 @@ python scraping.py --help
 | `--timeout` | `20` | FAQ 수집 요청 타임아웃(초)입니다. |
 | `--user-agent` | `Mozilla/5.0 (compatible; tossify-py/1.0)` | 퍼스트몰 요청 시 사용할 User-Agent 문자열입니다. 403 회피가 필요할 때 조정합니다. |
 | `--sleep-sec` | `0.0` | FAQ 페이지 수집 사이에 넣을 대기 시간(초)입니다. |
-| `--a-csv` | `data/faq_a.csv` | 원본 FAQ(A) CSV 저장 경로입니다. |
+| `--a-csv` | `data/faq_a.csv` | 원본 FAQ(A) CSV 경로입니다. `all`/`collect` 모드에서는 출력 파일, `transform` 모드에서는 입력 파일로 사용합니다. |
 | `--a-db` | `data/faq.db` | 원본 FAQ(A) SQLite 저장 경로입니다. |
-| `--openai-api-key` | `OPENAI_API_KEY` 환경변수 | OpenAI API 키입니다. 인자로 직접 넘기거나 환경변수로 준비할 수 있습니다. |
+| `--openai-api-key` | `.env` 또는 환경변수 `OPENAI_API_KEY` | OpenAI API 키입니다. 인자로 직접 넘기거나 `.env`/환경변수로 준비할 수 있습니다. |
 | `--openai-model` | `gpt-4o-mini` | FAQ 문체 변환에 사용할 OpenAI 모델명입니다. |
 | `--style-instruction` | 내장 기본 프롬프트 | 모델에 전달할 시스템 지시문입니다. 토스체 규칙을 바꾸고 싶을 때만 조정하면 됩니다. |
 | `--openai-interval-sec` | `0.0` | OpenAI 요청 사이 대기 시간(초)입니다. 너무 빠른 호출을 줄이고 싶을 때 사용합니다. |
@@ -186,7 +191,10 @@ python scraping.py --help
 | `--openai-read-timeout-sec` | `25.0` | OpenAI 응답 읽기 타임아웃(초)입니다. |
 | `--openai-max-retries` | `2` | OpenAI 호출 실패 시 재시도 횟수입니다. |
 | `--openai-progress-step` | `50` | 몇 건마다 진행률을 출력할지 정합니다. `0`이면 진행률을 출력하지 않습니다. |
-| `--skip-transform` | 꺼짐 | OpenAI 변환을 건너뛰고 원본 FAQ(A)만 저장합니다. |
+| `--transform-save-every` | `10` | 변환 결과를 몇 건마다 `faq_b.csv`, DB, 체크포인트 파일로 중간 저장할지 정합니다. |
+| `--transform-checkpoint` | `b-csv + .checkpoint.json` | 변환 재개용 체크포인트 파일 경로입니다. 비우면 `faq_b.csv.checkpoint.json`처럼 자동 생성합니다. |
+| `--resume-transform` / `--no-resume-transform` | `resume-transform` | 체크포인트가 있을 때 이어서 변환할지 정합니다. 기본값은 재개 사용입니다. |
+| `--skip-transform` | 꺼짐 | 하위 호환 옵션입니다. 지정 시 `--mode collect`처럼 동작합니다. |
 | `--b-csv` | `data/faq_b.csv` | 변환 FAQ(B) CSV 저장 경로입니다. |
 | `--b-db` | `data/faq.db` | 변환 FAQ(B) SQLite 저장 경로입니다. |
 
@@ -203,14 +211,23 @@ python scraping.py --help
 
 ## 3. 서비스 라이프 싸이클
 
-1. 실행 인자와 `OPENAI_API_KEY`를 준비해 `scraping.py`를 실행합니다.
+기본 모드(`--mode all`) 기준:
+
+1. `scraping.py` 시작 시 `.env`가 있으면 자동으로 로드합니다.
 2. FAQ 목록 API에서 페이지 단위로 게시글 순번(`seq`)을 수집합니다.
 3. 순번 기반 상세 URL(`.../faq/{source_id}`)에 접근해 질문/답변 본문을 추출합니다.
 4. 원본 FAQ(A)를 CSV와 SQLite(`faq_a`)로 저장합니다.
-5. `--skip-transform`이 아니면 OpenAI API로 FAQ를 변환합니다.
+5. OpenAI API로 FAQ를 변환합니다.
 6. 변환 중 네트워크/서버 오류는 재시도하고, 실패 항목은 `insufficient_source`로 표시합니다.
-7. 변환 FAQ(B)를 CSV와 SQLite(`faq_b`)로 저장합니다.
-8. 실행 건수/진행률/저장 경로를 출력하고 종료합니다.
+7. 변환 중간 결과를 배치 단위로 CSV, SQLite, 체크포인트에 저장합니다.
+8. 실행이 중단되면 다음 실행 시 체크포인트를 읽어 이어서 진행할 수 있습니다.
+9. 변환 FAQ(B)를 최종 CSV와 SQLite(`faq_b`)로 저장하고 체크포인트를 정리합니다.
+10. 실행 건수/진행률/저장 경로를 출력하고 종료합니다.
+
+모드별 차이:
+
+- `--mode collect`: 2~4단계만 수행하고 종료합니다.
+- `--mode transform`: FAQ를 다시 수집하지 않고, 기존 `faq_a.csv`를 읽어 5~8단계만 수행합니다.
 
 ---
 
