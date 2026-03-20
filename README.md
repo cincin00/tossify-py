@@ -1,6 +1,6 @@
 # tossify-py
 
-퍼스트몰 FAQ를 수집해 원본 데이터(A)로 저장하고, OpenAI API로 문체를 변환한 FAQ(B)를 저장하는 파이프라인입니다.
+퍼스트몰 FAQ를 수집해 원본 데이터(A)로 저장하고, OpenAI API로 문체를 변환한 FAQ(B)를 저장하는 파이프라인입니다. 생성된 `faq_b.csv`를 다시 활용해 채널톡 FAQ 일괄 업로드용 XLSX와 채널톡 스페이스 아티클 가져오기용 Markdown 배치도 만들 수 있습니다.
 
 ## 1. 로컬 환경 구성 방법
 
@@ -29,6 +29,12 @@ winget install -e --id Python.Python.3.13
 ```bash
 python3 --version
 ```
+
+주의:
+
+- 저장소에는 `.python-version`이 `tossify-env`로 고정되어 있습니다.
+- `pyenv: version 'tossify-env' is not installed` 오류가 나면 pyenv 환경을 맞춰 주거나, 가상환경을 만든 뒤 `./venv/bin/python` 형태로 실행하세요.
+- 아래 예시는 가상환경이 정상 활성화된 상태를 기준으로 작성했습니다.
 
 ### 2) 가상환경 생성/활성화
 
@@ -170,7 +176,50 @@ CLI 옵션 전체 목록이 필요하면 아래 명령으로 확인할 수 있�
 python scraping.py --help
 ```
 
-### 7) 주요 옵션 설명
+### 7) `faq_b.csv` 후처리 예시
+
+이미 `data/faq_b.csv`가 준비되어 있다면 아래 스크립트들로 채널톡 반입용 산출물을 만들 수 있습니다.
+
+채널톡 FAQ 일괄 업로드용 XLSX 생성:
+
+```bash
+python scripts/convert_faq_b_to_channeltalk_template.py
+```
+
+기본 출력:
+
+- `data/faq_b_channeltalk_upload.xlsx`
+- `data/faq_b_channeltalk_upload.report.json`
+
+주요 옵션 예시:
+
+```bash
+python scripts/convert_faq_b_to_channeltalk_template.py \
+  --publish-state published \
+  --overflow-policy truncate
+```
+
+채널톡 스페이스 아티클 가져오기용 Markdown 배치 생성:
+
+```bash
+python scripts/convert_faq_b_to_channeltalk_articles_md.py
+```
+
+기본 출력:
+
+- `data/channeltalk_articles_md/batch_001/*.md`
+- `data/channeltalk_articles_md/manifest.csv`
+- `data/channeltalk_articles_md/summary.json`
+- `data/channeltalk_articles_md/IMPORT_NOTES.txt`
+
+기본 동작 참고:
+
+- `질문 1개 = md 파일 1개`로 생성합니다.
+- 문서 첫 줄은 `# 질문` 제목입니다.
+- 채널톡 파일 가져오기 제한에 맞춰 기본적으로 20개씩 `batch_001`, `batch_002`처럼 나눕니다.
+- 출력 폴더가 이미 있으면 새로 생성하기 위해 기존 `data/channeltalk_articles_md`를 지우고 다시 만듭니다.
+
+### 8) 주요 옵션 설명
 
 | 옵션 | 기본값 | 설명 |
 |---|---|---|
@@ -209,6 +258,8 @@ python scraping.py --help
 | `save_a_to_csv` / `save_a_to_sqlite` | 원본 FAQ(A) 저장 | `FaqItem[]` | `data/faq_a.csv`, `faq_a` |
 | `transform_with_openai` | OpenAI 호출, 재시도/타임아웃 처리, JSON 파싱 | `FaqItem[]`, API 키, 모델, 지시어 | `FaqTransformed[]` |
 | `save_b_to_csv` / `save_b_to_sqlite` | 변환 FAQ(B) 저장 | `FaqTransformed[]` | `data/faq_b.csv`, `faq_b` |
+| `scripts/convert_faq_b_to_channeltalk_template.py` | `faq_b.csv`를 채널톡 FAQ 업로드용 XLSX로 변환 | `data/faq_b.csv`, `data/faq_upload_template_ko.xlsx` | `data/faq_b_channeltalk_upload.xlsx`, 리포트 JSON |
+| `scripts/convert_faq_b_to_channeltalk_articles_md.py` | `faq_b.csv`를 채널톡 스페이스 아티클용 Markdown 파일로 변환 | `data/faq_b.csv` | `data/channeltalk_articles_md/batch_*/` |
 | `data/faq.db` | A/B 통합 SQLite 저장소 | 저장 함수 호출 | `faq_a`, `faq_b` 테이블 |
 
 ## 3. 서비스 라이프 싸이클
@@ -224,7 +275,8 @@ python scraping.py --help
 7. 변환 중간 결과를 배치 단위로 CSV, SQLite, 체크포인트에 저장합니다.
 8. 실행이 중단되면 다음 실행 시 체크포인트를 읽어 이어서 진행할 수 있습니다.
 9. 변환 FAQ(B)를 최종 CSV와 SQLite(`faq_b`)로 저장하고 체크포인트를 정리합니다.
-10. 실행 건수/진행률/저장 경로를 출력하고 종료합니다.
+10. 필요하면 `faq_b.csv`를 기반으로 채널톡 FAQ 업로드용 XLSX나 스페이스 아티클용 Markdown 배치를 추가로 생성합니다.
+11. 실행 건수/진행률/저장 경로를 출력하고 종료합니다.
 
 모드별 차이:
 
@@ -233,7 +285,77 @@ python scraping.py --help
 
 ---
 
-## 4. HTML 뷰어 사용 방법
+## 4. 채널톡 내보내기
+
+### 1) FAQ 일괄 업로드용 XLSX
+
+채널톡 FAQ 업로드 템플릿(`data/faq_upload_template_ko.xlsx`)을 기준으로 `faq_b.csv`를 업로드 가능한 XLSX로 변환합니다.
+
+```bash
+python scripts/convert_faq_b_to_channeltalk_template.py
+```
+
+기본 출력 경로:
+
+- `data/faq_b_channeltalk_upload.xlsx`
+- `data/faq_b_channeltalk_upload.report.json`
+
+매핑 규칙:
+
+- `question1`: `transformed_text`에서 파싱한 질문
+- `answer`: `transformed_text`에서 파싱한 답변
+- `question2 ~ question11`: 비움
+- `id`: 비움
+- `language`: 기본 `ko`
+- `publishState`: 기본 `unpublished`
+
+옵션 참고:
+
+- `--publish-state published|unpublished`
+- `--overflow-policy truncate|skip|error`
+
+제약 참고:
+
+- 질문은 템플릿 기준 100자 제한을 따릅니다.
+- 답변은 템플릿 기준 500자 제한을 따릅니다.
+- 기본값 `truncate`는 제한을 넘는 답변을 잘라 업로드 가능 상태로 맞춥니다.
+
+### 2) 스페이스 아티클 가져오기용 Markdown
+
+`faq_b.csv`를 기준으로 채널톡 스페이스 아티클 파일 가져오기용 `md` 파일을 생성합니다.
+
+```bash
+python scripts/convert_faq_b_to_channeltalk_articles_md.py
+```
+
+기본 출력 경로:
+
+- `data/channeltalk_articles_md/batch_001/*.md`
+- `data/channeltalk_articles_md/manifest.csv`
+- `data/channeltalk_articles_md/summary.json`
+- `data/channeltalk_articles_md/IMPORT_NOTES.txt`
+
+생성 규칙:
+
+- 질문 1건당 Markdown 파일 1개를 만듭니다.
+- 각 파일의 첫 줄은 `# 질문` 형식의 제목입니다.
+- 파일명은 `순번__source_id__질문.md` 형식으로 저장합니다.
+- 채널톡 파일 가져오기 제한에 맞춰 기본적으로 20개씩 배치 폴더로 나눕니다.
+
+현재 기본 포맷:
+
+- 원문의 질문은 H1 제목으로 사용합니다.
+- 답변은 Markdown 본문으로 저장합니다.
+- 코드처럼 보이는 줄은 fenced code block으로 묶거나 인라인 코드로 감쌉니다.
+
+채널톡 파일 가져오기 참고:
+
+- `md` 파일 가져오기를 지원합니다.
+- 한 번에 최대 20개 파일 업로드를 기준으로 배치를 나눕니다.
+- 파일 인코딩은 UTF-8입니다.
+- 비 PDF 파일은 파일당 최대 1MB를 넘지 않도록 점검합니다.
+
+## 5. HTML 뷰어 사용 방법
 
 별도 설치 없이 브라우저에서 `viewer.html`을 열어 `faq_b.csv`를 확인할 수 있습니다.
 
